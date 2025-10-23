@@ -31,31 +31,7 @@
             bindings = <&kp>, <&kp>;
         };
         
-        td_bt_tl: backtick_tilde {
-            compatible = "zmk,behavior-hold-tap";
-            #binding-cells = <2>;
-            tapping-term-ms = <200>;
-            flavor = "tap-preferred";
-            bindings = <&kp>, <&kp>;
-        };
-        
         td_bs_pipe: backslash_pipe {
-            compatible = "zmk,behavior-hold-tap";
-            #binding-cells = <2>;
-            tapping-term-ms = <200>;
-            flavor = "tap-preferred";
-            bindings = <&kp>, <&kp>;
-        };
-        
-        td_amp_car: ampersand_caret {
-            compatible = "zmk,behavior-hold-tap";
-            #binding-cells = <2>;
-            tapping-term-ms = <200>;
-            flavor = "tap-preferred";
-            bindings = <&kp>, <&kp>;
-        };
-        
-        td_eq_pct: equal_percent {
             compatible = "zmk,behavior-hold-tap";
             #binding-cells = <2>;
             tapping-term-ms = <200>;
@@ -120,10 +96,10 @@
 
         code_layer {
             bindings = <
-                &td_bt_tl TILDE GRAVE &kp LBKT  &kp RBKT        &kp DQT         &kp DLLR            &kp FSLH        &kp N7          &kp N8          &kp N9          &kp STAR
-                &kp COLON       &hml LALT LPAR  &hml LSHFT RPAR &hml LCTRL SQT  &kp UNDER           &kp MINUS       &hmr RCTRL N4   &hmr RSHFT N5   &hmr RALT N6    &kp PLUS
-                &trans          &td_amp_car CARET AMPS &td_bs_pipe PIPE BSLH &kp AT &kp HASH    &kp EXCL        &td_eq_pct PRCNT EQUAL &kp N1   &kp N2          &kp N3          &kp DOT         &trans
-                                                                &trans          &trans              &trans          &kp COMMA       &kp N0          &trans
+                &kp GRAVE       &kp AT          &kp HASH        &kp DQT         &kp DLLR            &kp FSLH        &kp N7          &kp N8          &kp N9          &kp STAR
+                &kp TILDE       &hml LALT LPAR  &hml LSHFT RPAR &hml LCTRL SQT  &kp UNDER           &kp MINUS       &hmr RCTRL N4   &hmr RSHFT N5   &hmr RALT N6    &kp PLUS
+                &kp CARET       &kp AMPS        &td_bs_pipe PIPE BSLH &kp EXCL &trans              &trans          &kp EQUAL       &kp N1          &kp N2          &kp N3          &kp DOT         &kp PRCNT
+                                                                &trans          &kp BSPC            &trans          &kp COMMA       &kp N0          &kp BSLH
             >;
         };
 
