@@ -108,7 +108,7 @@
 
     keymap {
         compatible = "zmk,keymap";
-    
+
         base_layer {
             bindings = <
                 &kp Q           &kp W           &kp E           &kp R           &kp T               &kp Y           &kp U           &kp I           &kp O           &kp P
@@ -117,7 +117,7 @@
                                                                 &lt CODE ESC    &kp BSPC            &lt MOD TAB     &lt ADJ ENTER   &kp SPACE       &lt NAV LSHFT
             >;
         };
-    
+
         code_layer {
             bindings = <
                 &td_bt_tl TILDE GRAVE &kp LBKT  &kp RBKT        &kp DQT         &kp DLLR            &kp FSLH        &kp N7          &kp N8          &kp N9          &kp STAR
@@ -126,7 +126,7 @@
                                                                 &trans          &trans              &trans          &kp COMMA       &kp N0          &trans
             >;
         };
-    
+
         nav_layer {
             bindings = <
                 &trans          &msc SCRL_UP    &mmv MOVE_UP    &mkp LCLK       &mkp RCLK           &kp PG_UP       &kp HOME        &kp UP          &kp END         &kp DEL
@@ -135,7 +135,7 @@
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
-    
+
         mod_layer {
             bindings = <
                 &mac_lock       &win_lock       &trans          &trans          &trans              &kp C_PREV      &kp C_PP        &kp C_NEXT      &kp C_BRI_UP    &trans
@@ -144,7 +144,7 @@
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
-    
+
         adj_layer {
             bindings = <
                 &studio_unlock  &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &bt BT_CLR_ALL
@@ -154,6 +154,7 @@
             >;
         };
     };
+};
 
 &sk {
     release-after-ms = <2000>;
