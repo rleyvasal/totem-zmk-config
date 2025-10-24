@@ -10,7 +10,7 @@
 / {
     chosen {
         zmk,kscan = &kscan0;
-        //zmk,physical-layout = &totem_physical_layout;
+        zmk,physical-layout = &totem_physical_layout;
     };
 
     default_transform: keymap_transform_0 {
@@ -67,7 +67,7 @@
             , <&key_physical_attrs 100 100  900  100 0 0 0>
             , <&key_physical_attrs 100 100 1000  100 0 0 0>
             
-            , <&key_physical_attrs 100 100  -50  200 0 0 0>
+            , <&key_physical_attrs 100 100  (-50)  200 0 0 0>
             , <&key_physical_attrs 100 100   50  200 0 0 0>
             , <&key_physical_attrs 100 100  150  200 0 0 0>
             , <&key_physical_attrs 100 100  250  200 0 0 0>
