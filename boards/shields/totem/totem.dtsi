@@ -44,47 +44,51 @@
         kscan = <&kscan0>;
         
         keys
-            = <&key_physical_attrs 100 100   266   480   0   0   0>
-            , <&key_physical_attrs 100 100   387   387   0   0   0>
-            , <&key_physical_attrs 100 100   512   326   0   0   0>
-            , <&key_physical_attrs 100 100   620   375   0   0   0>
-            , <&key_physical_attrs 100 100   728   392   0   0   0>
-            , <&key_physical_attrs 100 100  1533   480   0   0   0>
-            , <&key_physical_attrs 100 100  1412   387   0   0   0>
-            , <&key_physical_attrs 100 100  1289   326   0   0   0>
-            , <&key_physical_attrs 100 100  1181   375   0   0   0>
-            , <&key_physical_attrs 100 100  1073   392   0   0   0>
+            // Row 0: Left (Q-T) stays same, Right (Y-P) reversed
+            = <&key_physical_attrs 100 100   266   480   0   0   0>  // Q
+            , <&key_physical_attrs 100 100   387   387   0   0   0>  // W
+            , <&key_physical_attrs 100 100   512   326   0   0   0>  // E
+            , <&key_physical_attrs 100 100   620   375   0   0   0>  // R
+            , <&key_physical_attrs 100 100   728   392   0   0   0>  // T
+            , <&key_physical_attrs 100 100  1073   392   0   0   0>  // Y (was P)
+            , <&key_physical_attrs 100 100  1181   375   0   0   0>  // U (was O)
+            , <&key_physical_attrs 100 100  1289   326   0   0   0>  // I
+            , <&key_physical_attrs 100 100  1412   387   0   0   0>  // O (was U)
+            , <&key_physical_attrs 100 100  1533   480   0   0   0>  // P (was Y)
             
-            , <&key_physical_attrs 100 100   284   581   0   0   0>
-            , <&key_physical_attrs 100 100   395   489   0   0   0>
-            , <&key_physical_attrs 100 100   512   428   0   0   0>
-            , <&key_physical_attrs 100 100   620   477   0   0   0>
-            , <&key_physical_attrs 100 100   728   494   0   0   0>
-            , <&key_physical_attrs 100 100  1515   581   0   0   0>
-            , <&key_physical_attrs 100 100  1404   489   0   0   0>
-            , <&key_physical_attrs 100 100  1289   428   0   0   0>
-            , <&key_physical_attrs 100 100  1181   477   0   0   0>
-            , <&key_physical_attrs 100 100  1073   495   0   0   0>
+            // Row 1: Left (A-G) stays same, Right (H-;) reversed
+            , <&key_physical_attrs 100 100   284   581   0   0   0>  // A
+            , <&key_physical_attrs 100 100   395   489   0   0   0>  // S
+            , <&key_physical_attrs 100 100   512   428   0   0   0>  // D
+            , <&key_physical_attrs 100 100   620   477   0   0   0>  // F
+            , <&key_physical_attrs 100 100   728   494   0   0   0>  // G
+            , <&key_physical_attrs 100 100  1073   495   0   0   0>  // H (was ;)
+            , <&key_physical_attrs 100 100  1181   477   0   0   0>  // J (was L)
+            , <&key_physical_attrs 100 100  1289   428   0   0   0>  // K
+            , <&key_physical_attrs 100 100  1404   489   0   0   0>  // L (was J)
+            , <&key_physical_attrs 100 100  1515   581   0   0   0>  // ; (was H)
             
-            , <&key_physical_attrs 100 100   188   654   0   0   0>
-            , <&key_physical_attrs 100 100   302   681   0   0   0>
-            , <&key_physical_attrs 100 100   402   590   0   0   0>
-            , <&key_physical_attrs 100 100   512   530   0   0   0>
-            , <&key_physical_attrs 100 100   620   579   0   0   0>
-            , <&key_physical_attrs 100 100   728   596   0   0   0>
-            , <&key_physical_attrs 100 100  1499   681   0   0   0>
-            , <&key_physical_attrs 100 100  1398   590   0   0   0>
-            , <&key_physical_attrs 100 100  1289   530   0   0   0>
-            , <&key_physical_attrs 100 100  1181   579   0   0   0>
-            , <&key_physical_attrs 100 100  1073   597   0   0   0>
-            , <&key_physical_attrs 100 100  1613   654   0   0   0>
+            // Row 2: Left ([,Z-B) stays same, Right (N-],]) reversed
+            , <&key_physical_attrs 100 100   188   654   0   0   0>  // [
+            , <&key_physical_attrs 100 100   302   681   0   0   0>  // Z
+            , <&key_physical_attrs 100 100   402   590   0   0   0>  // X
+            , <&key_physical_attrs 100 100   512   530   0   0   0>  // C
+            , <&key_physical_attrs 100 100   620   579   0   0   0>  // V
+            , <&key_physical_attrs 100 100   728   596   0   0   0>  // B
+            , <&key_physical_attrs 100 100  1073   597   0   0   0>  // N (was ])
+            , <&key_physical_attrs 100 100  1181   579   0   0   0>  // M (was /)
+            , <&key_physical_attrs 100 100  1289   530   0   0   0>  // , (was .)
+            , <&key_physical_attrs 100 100  1398   590   0   0   0>  // . (was ,)
+            , <&key_physical_attrs 100 100  1499   681   0   0   0>  // / (was M)
+            , <&key_physical_attrs 100 100  1613   654   0   0   0>  // ] (was N)
             
-            , <&key_physical_attrs 100 100   588   704   0   0   0>
-            , <&key_physical_attrs 100 100   708   720   0   0   0>
-            , <&key_physical_attrs 100 100   819   767   0   0   0>
-            , <&key_physical_attrs 100 100  1211   704   0   0   0>
-            , <&key_physical_attrs 100 100  1092   720   0   0   0>
-            , <&key_physical_attrs 100 100   981   767   0   0   0>
+            // Row 3: Thumbs - Left stays same, Right reversed
+            , <&key_physical_attrs 100 100   588   704   0   0   0>  // ESC
+            , <&key_physical_attrs 100 100   708   720   0   0   0>  // BSPC
+            , <&key_physical_attrs 100 100   819   767   0   0   0>  // TAB
+            , <&key_physical_attrs 100 100   981   767   0   0   0>  // ENT (was LSHFT)
+            , <&key_physical_attrs 100 100  1092   720   0   0   0>  // SPC (was SPC - correct)
+            , <&key_physical_attrs 100 100  1211   704   0   0   0>  // LSHFT (was ENT)
             ;
     };
 
