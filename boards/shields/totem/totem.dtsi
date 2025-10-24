@@ -45,54 +45,52 @@
         
         keys
             // Row 0: Q W E R T | Y U I O P
-            = <&key_physical_attrs 100 100   266   480   0   0   0>  // Q
-            , <&key_physical_attrs 100 100   387   387   0   0   0>  // W
-            , <&key_physical_attrs 100 100   512   326   0   0   0>  // E
-            , <&key_physical_attrs 100 100   620   375   0   0   0>  // R
-            , <&key_physical_attrs 100 100   728   392   0   0   0>  // T
-            , <&key_physical_attrs 100 100  1073   480   0   0   0>  // Y
-            , <&key_physical_attrs 100 100  1181   387   0   0   0>  // U
-            , <&key_physical_attrs 100 100  1289   326   0   0   0>  // I
-            , <&key_physical_attrs 100 100  1412   375   0   0   0>  // O
-            , <&key_physical_attrs 100 100  1533   392   0   0   0>  // P
+            = <&key_physical_attrs 100 100   266   480   0   0   0>
+            , <&key_physical_attrs 100 100   387   387   0   0   0>
+            , <&key_physical_attrs 100 100   512   326   0   0   0>
+            , <&key_physical_attrs 100 100   620   375   0   0   0>
+            , <&key_physical_attrs 100 100   728   392   0   0   0>
+            , <&key_physical_attrs 100 100   900   480   0   0   0>
+            , <&key_physical_attrs 100 100  1020   387   0   0   0>
+            , <&key_physical_attrs 100 100  1140   326   0   0   0>
+            , <&key_physical_attrs 100 100  1260   375   0   0   0>
+            , <&key_physical_attrs 100 100  1380   392   0   0   0>
             
             // Row 1: A S D F G | H J K L ;
-            , <&key_physical_attrs 100 100   284   581   0   0   0>  // A
-            , <&key_physical_attrs 100 100   395   489   0   0   0>  // S
-            , <&key_physical_attrs 100 100   512   428   0   0   0>  // D
-            , <&key_physical_attrs 100 100   620   477   0   0   0>  // F
-            , <&key_physical_attrs 100 100   728   494   0   0   0>  // G
-            , <&key_physical_attrs 100 100  1073   581   0   0   0>  // H
-            , <&key_physical_attrs 100 100  1181   489   0   0   0>  // J
-            , <&key_physical_attrs 100 100  1289   428   0   0   0>  // K
-            , <&key_physical_attrs 100 100  1404   477   0   0   0>  // L
-            , <&key_physical_attrs 100 100  1515   495   0   0   0>  // ;
+            , <&key_physical_attrs 100 100   284   581   0   0   0>
+            , <&key_physical_attrs 100 100   395   489   0   0   0>
+            , <&key_physical_attrs 100 100   512   428   0   0   0>
+            , <&key_physical_attrs 100 100   620   477   0   0   0>
+            , <&key_physical_attrs 100 100   728   494   0   0   0>
+            , <&key_physical_attrs 100 100   900   581   0   0   0>
+            , <&key_physical_attrs 100 100  1020   489   0   0   0>
+            , <&key_physical_attrs 100 100  1140   428   0   0   0>
+            , <&key_physical_attrs 100 100  1260   477   0   0   0>
+            , <&key_physical_attrs 100 100  1380   495   0   0   0>
             
             // Row 2: [ Z X C V B | N M , . / ]
-            , <&key_physical_attrs 100 100   188   654   0   0   0>  // [
-            , <&key_physical_attrs 100 100   302   681   0   0   0>  // Z
-            , <&key_physical_attrs 100 100   402   590   0   0   0>  // X
-            , <&key_physical_attrs 100 100   512   530   0   0   0>  // C
-            , <&key_physical_attrs 100 100   620   579   0   0   0>  // V
-            , <&key_physical_attrs 100 100   728   596   0   0   0>  // B
-            , <&key_physical_attrs 100 100  1073   654   0   0   0>  // N
-            , <&key_physical_attrs 100 100  1181   681   0   0   0>  // M
-            , <&key_physical_attrs 100 100  1289   590   0   0   0>  // ,
-            , <&key_physical_attrs 100 100  1398   530   0   0   0>  // .
-            , <&key_physical_attrs 100 100  1499   579   0   0   0>  // /
-            , <&key_physical_attrs 100 100  1613   597   0   0   0>  // ]
+            , <&key_physical_attrs 100 100   188   654   0   0   0>
+            , <&key_physical_attrs 100 100   302   681   0   0   0>
+            , <&key_physical_attrs 100 100   402   590   0   0   0>
+            , <&key_physical_attrs 100 100   512   530   0   0   0>
+            , <&key_physical_attrs 100 100   620   579   0   0   0>
+            , <&key_physical_attrs 100 100   728   596   0   0   0>
+            , <&key_physical_attrs 100 100   880   654   0   0   0>
+            , <&key_physical_attrs 100 100  1000   681   0   0   0>
+            , <&key_physical_attrs 100 100  1120   590   0   0   0>
+            , <&key_physical_attrs 100 100  1240   530   0   0   0>
+            , <&key_physical_attrs 100 100  1360   579   0   0   0>
+            , <&key_physical_attrs 100 100  1480   597   0   0   0>
             
             // Row 3: ESC BSPC TAB | ENT SPC LSHFT
-            , <&key_physical_attrs 100 100   588   704   0   0   0>  // ESC
-            , <&key_physical_attrs 100 100   708   720   0   0   0>  // BSPC
-            , <&key_physical_attrs 100 100   819   767   0   0   0>  // TAB
-            , <&key_physical_attrs 100 100   981   704   0   0   0>  // ENT
-            , <&key_physical_attrs 100 100  1092   720   0   0   0>  // SPC
-            , <&key_physical_attrs 100 100  1211   767   0   0   0>  // LSHFT
+            , <&key_physical_attrs 100 100   588   704   0   0   0>
+            , <&key_physical_attrs 100 100   708   720   0   0   0>
+            , <&key_physical_attrs 100 100   819   767   0   0   0>
+            , <&key_physical_attrs 100 100   950   704   0   0   0>
+            , <&key_physical_attrs 100 100  1070   720   0   0   0>
+            , <&key_physical_attrs 100 100  1190   767   0   0   0>
             ;
     };
-
-
 
 /* working version shifted left
     totem_physical_layout: totem_physical_layout {
