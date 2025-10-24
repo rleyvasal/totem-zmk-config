@@ -37,7 +37,55 @@
             ;
     };
 
+    totem_physical_layout: totem_physical_layout {
+        compatible = "zmk,physical-layout";
+        display-name = "TOTEM Layout";
+        transform = <&default_transform>;
+        kscan = <&kscan0>;
+        
+        keys
+            = <&key_physical_attrs 100 100   4435    8000   1000   4435    8000>
+            , <&key_physical_attrs 100 100   6453    6445    400   6453    6445>
+            , <&key_physical_attrs 100 100   8513    5417      0   8513    5417>
+            , <&key_physical_attrs 100 100  10313    6260      0  10313    6260>
+            , <&key_physical_attrs 100 100  12113    6532      0  12113    6532>
+            , <&key_physical_attrs 100 100  25555    8001 (-1000) 25555    8001>
+            , <&key_physical_attrs 100 100  23529    6445  (-400) 23529    6445>
+            , <&key_physical_attrs 100 100  21475    5417      0  21475    5417>
+            , <&key_physical_attrs 100 100  19675    6260      0  19675    6260>
+            , <&key_physical_attrs 100 100  17875    6532      0  17875    6532>
+            , <&key_physical_attrs 100 100   4730    9674   1000   4730    9674>
+            , <&key_physical_attrs 100 100   6572    8141    400   6572    8141>
+            , <&key_physical_attrs 100 100   8513    7117      0   8513    7117>
+            , <&key_physical_attrs 100 100  10313    7960      0  10313    7960>
+            , <&key_physical_attrs 100 100  12113    8232      0  12113    8232>
+            , <&key_physical_attrs 100 100  25260    9676 (-1000) 25260    9676>
+            , <&key_physical_attrs 100 100  23410    8141  (-400) 23410    8141>
+            , <&key_physical_attrs 100 100  21475    7117      0  21475    7117>
+            , <&key_physical_attrs 100 100  19675    7960      0  19675    7960>
+            , <&key_physical_attrs 100 100  17875    8241      0  17875    8241>
+            , <&key_physical_attrs 100 100   3115   10909   1000   3115   10909>
+            , <&key_physical_attrs 100 100   5025   11348   1000   5025   11348>
+            , <&key_physical_attrs 100 100   6690    9836    400   6690    9836>
+            , <&key_physical_attrs 100 100   8513    8817      0   8513    8817>
+            , <&key_physical_attrs 100 100  10313    9660      0  10313    9660>
+            , <&key_physical_attrs 100 100  12113    9932      0  12113    9932>
+            , <&key_physical_attrs 100 100  24965   11350 (-1000) 24965   11350>
+            , <&key_physical_attrs 100 100  23292    9837  (-400) 23292    9837>
+            , <&key_physical_attrs 100 100  21475    8817      0  21475    8817>
+            , <&key_physical_attrs 100 100  19675    9660      0  19675    9660>
+            , <&key_physical_attrs 100 100  17875    9941      0  17875    9941>
+            , <&key_physical_attrs 100 100  26870   10909 (-1000) 26870   10909>
+            , <&key_physical_attrs 100 100   9810   11731      0   9810   11731>
+            , <&key_physical_attrs 100 100  11803   12009 (-1500) 11803   12009>
+            , <&key_physical_attrs 100 100  13648   12776 (-3000) 13648   12776>
+            , <&key_physical_attrs 100 100  20178   11731      0  20178   11731>
+            , <&key_physical_attrs 100 100  18188   12009   1500  18188   12009>
+            , <&key_physical_attrs 100 100  16343   12776   3000  16343   12776>
+            ;
+    };
 
+/* working version shifted left
     totem_physical_layout: totem_physical_layout {
         compatible = "zmk,physical-layout";
         display-name = "TOTEM Layout";
@@ -88,7 +136,7 @@
             , <&key_physical_attrs 100 100  800  300 0 0 0>
             ;
     };
-
+*/
 /*  working test
     totem_physical_layout: totem_physical_layout {
         compatible = "zmk,physical-layout";
