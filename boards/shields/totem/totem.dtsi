@@ -44,6 +44,21 @@
         kscan = <&kscan0>;
         
         keys
+            = <&key_physical_attrs 100 100 0 0 0 0 0>
+            , <&key_physical_attrs 100 100 100 0 0 0 0>
+            , <&key_physical_attrs 100 100 200 0 0 0 0>
+            ;
+    };
+
+
+/*
+    totem_physical_layout: totem_physical_layout {
+        compatible = "zmk,physical-layout";
+        display-name = "TOTEM Layout";
+        transform = <&default_transform>;
+        kscan = <&kscan0>;
+        
+        keys
             = <&key_physical_attrs 100 100   4435    8000   1000   4435    8000>
             , <&key_physical_attrs 100 100   6453    6445    400   6453    6445>
             , <&key_physical_attrs 100 100   8513    5417      0   8513    5417>
@@ -84,4 +99,6 @@
             , <&key_physical_attrs 100 100  16343   12776   3000  16343   12776>
             ;
     };
+*/
+
 };
