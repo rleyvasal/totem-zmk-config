@@ -44,47 +44,47 @@
         kscan = <&kscan0>;
         
         keys
-            = <&key_physical_attrs 100 100   177   320   0   0   0>
-            , <&key_physical_attrs 100 100   258   258   0   0   0>
-            , <&key_physical_attrs 100 100   341   217   0   0   0>
-            , <&key_physical_attrs 100 100   413   250   0   0   0>
-            , <&key_physical_attrs 100 100   485   261   0   0   0>
-            , <&key_physical_attrs 100 100  1022   320   0   0   0>
-            , <&key_physical_attrs 100 100   941   258   0   0   0>
-            , <&key_physical_attrs 100 100   859   217   0   0   0>
-            , <&key_physical_attrs 100 100   787   250   0   0   0>
-            , <&key_physical_attrs 100 100   715   261   0   0   0>
+            = <&key_physical_attrs 100 100   266   480   0   0   0>
+            , <&key_physical_attrs 100 100   387   387   0   0   0>
+            , <&key_physical_attrs 100 100   512   326   0   0   0>
+            , <&key_physical_attrs 100 100   620   375   0   0   0>
+            , <&key_physical_attrs 100 100   728   392   0   0   0>
+            , <&key_physical_attrs 100 100  1533   480   0   0   0>
+            , <&key_physical_attrs 100 100  1412   387   0   0   0>
+            , <&key_physical_attrs 100 100  1289   326   0   0   0>
+            , <&key_physical_attrs 100 100  1181   375   0   0   0>
+            , <&key_physical_attrs 100 100  1073   392   0   0   0>
             
-            , <&key_physical_attrs 100 100   189   387   0   0   0>
-            , <&key_physical_attrs 100 100   263   326   0   0   0>
-            , <&key_physical_attrs 100 100   341   285   0   0   0>
-            , <&key_physical_attrs 100 100   413   318   0   0   0>
-            , <&key_physical_attrs 100 100   485   329   0   0   0>
-            , <&key_physical_attrs 100 100  1010   387   0   0   0>
-            , <&key_physical_attrs 100 100   936   326   0   0   0>
-            , <&key_physical_attrs 100 100   859   285   0   0   0>
-            , <&key_physical_attrs 100 100   787   318   0   0   0>
-            , <&key_physical_attrs 100 100   715   330   0   0   0>
+            , <&key_physical_attrs 100 100   284   581   0   0   0>
+            , <&key_physical_attrs 100 100   395   489   0   0   0>
+            , <&key_physical_attrs 100 100   512   428   0   0   0>
+            , <&key_physical_attrs 100 100   620   477   0   0   0>
+            , <&key_physical_attrs 100 100   728   494   0   0   0>
+            , <&key_physical_attrs 100 100  1515   581   0   0   0>
+            , <&key_physical_attrs 100 100  1404   489   0   0   0>
+            , <&key_physical_attrs 100 100  1289   428   0   0   0>
+            , <&key_physical_attrs 100 100  1181   477   0   0   0>
+            , <&key_physical_attrs 100 100  1073   495   0   0   0>
             
-            , <&key_physical_attrs 100 100   125   436   0   0   0>
-            , <&key_physical_attrs 100 100   201   454   0   0   0>
-            , <&key_physical_attrs 100 100   268   393   0   0   0>
-            , <&key_physical_attrs 100 100   341   353   0   0   0>
-            , <&key_physical_attrs 100 100   413   386   0   0   0>
-            , <&key_physical_attrs 100 100   485   397   0   0   0>
-            , <&key_physical_attrs 100 100   999   454   0   0   0>
-            , <&key_physical_attrs 100 100   932   393   0   0   0>
-            , <&key_physical_attrs 100 100   859   353   0   0   0>
-            , <&key_physical_attrs 100 100   787   386   0   0   0>
-            , <&key_physical_attrs 100 100   715   398   0   0   0>
-            , <&key_physical_attrs 100 100  1075   436   0   0   0>
+            , <&key_physical_attrs 100 100   188   654   0   0   0>
+            , <&key_physical_attrs 100 100   302   681   0   0   0>
+            , <&key_physical_attrs 100 100   402   590   0   0   0>
+            , <&key_physical_attrs 100 100   512   530   0   0   0>
+            , <&key_physical_attrs 100 100   620   579   0   0   0>
+            , <&key_physical_attrs 100 100   728   596   0   0   0>
+            , <&key_physical_attrs 100 100  1499   681   0   0   0>
+            , <&key_physical_attrs 100 100  1398   590   0   0   0>
+            , <&key_physical_attrs 100 100  1289   530   0   0   0>
+            , <&key_physical_attrs 100 100  1181   579   0   0   0>
+            , <&key_physical_attrs 100 100  1073   597   0   0   0>
+            , <&key_physical_attrs 100 100  1613   654   0   0   0>
             
-            , <&key_physical_attrs 100 100   392   469   0   0   0>
-            , <&key_physical_attrs 100 100   472   480   0   0   0>
-            , <&key_physical_attrs 100 100   546   511   0   0   0>
-            , <&key_physical_attrs 100 100   807   469   0   0   0>
-            , <&key_physical_attrs 100 100   728   480   0   0   0>
-            , <&key_physical_attrs 100 100   654   511   0   0   0>
+            , <&key_physical_attrs 100 100   588   704   0   0   0>
+            , <&key_physical_attrs 100 100   708   720   0   0   0>
+            , <&key_physical_attrs 100 100   819   767   0   0   0>
+            , <&key_physical_attrs 100 100  1211   704   0   0   0>
+            , <&key_physical_attrs 100 100  1092   720   0   0   0>
+            , <&key_physical_attrs 100 100   981   767   0   0   0>
             ;
     };
 
