@@ -54,12 +54,14 @@
             key-positions = <26 27>;
             bindings = <&kp LA(SPACE)>;
             slow-release;
+            layers = <0>; 
         };
         
         combo_enye {
             timeout-ms = <50>;
             key-positions = <8 9>;
             bindings = <&kp RA(N)>;
+            layers = <0>; 
         };
     };
 
