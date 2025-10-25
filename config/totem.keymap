@@ -97,14 +97,14 @@
             >;
         };
 
-        code_layer {
-            bindings = <
-                &kp GRAVE       &kp AT          &kp HASH        &kp DQT         &kp DLLR            &kp FSLH        &kp N7          &kp N8          &kp N9          &kp STAR
-                &kp TILDE       &hml LALT LPAR  &hml LSHFT RPAR &hml LCTRL SQT  &kp UNDER           &kp MINUS       &hmr RCTRL N4   &hmr RSHFT N5   &hmr RALT N6    &kp PLUS
-                &kp CARET       &kp AMPS        &td_bs_pipe PIPE BSLH &kp EXCL &trans              &trans          &kp EQUAL       &kp N1          &kp N2          &kp N3          &kp DOT         &kp PRCNT
-                                                                &trans          &trans              &trans          &kp COMMA       &kp N0          &kp BSLH
-            >;
-        };
+    code_layer {
+        bindings = <
+            &kp GRAVE       &kp AT          &kp HASH        &kp DQT         &kp SQT             &kp FSLH        &kp N7          &kp N8          &kp N9          &kp STAR
+            &kp LBKT        &hml LALT RBKT  &hml LSHFT LPAR &hml LCTRL RPAR &kp UNDER           &kp MINUS       &hmr RCTRL N4   &hmr RSHFT N5   &hmr RALT N6    &kp PLUS
+            &kp CARET       &kp AMPS        &kp PIPE        &kp EXCL        &kp TILDE           &kp DLLR        &kp EQUAL       &kp N1          &kp N2          &kp N3          &kp DOT         &kp PRCNT
+                                                            &trans          &trans              &trans          &kp COMMA       &kp N0          &kp BSLH
+        >;
+    };
 
         nav_layer {
             bindings = <
