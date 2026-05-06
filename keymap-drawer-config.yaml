@@ -26,10 +26,6 @@ parse_config:
     '&kp BSPC': '⌫'
     '&kp SPACE': '␣'
     
-    # Locks
-    '&mac_lock': '🔒Mac'
-    '&win_lock': '🔒Win'
-    
     # Bluetooth
     '&bt BT_SEL 0': 'ᛒ0'
     '&bt BT_SEL 1': 'ᛒ1'
