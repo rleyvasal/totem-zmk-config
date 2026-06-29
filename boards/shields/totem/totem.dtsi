@@ -40,6 +40,14 @@
             , <&xiao_d 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
             ;
     };
+
+    /* Deep-sleep wake source: designate kscan so a keypress wakes the central from
+     * System OFF. Works with the #3207 fix in the fork pinned in west.yml. */
+    soft_off_wakers {
+        compatible = "zmk,soft-off-wakeup-sources";
+        status = "okay";
+        wakeup-sources = <&kscan0>;
+    };
     
      totem_physical_layout: totem_physical_layout {
         compatible = "zmk,physical-layout";
