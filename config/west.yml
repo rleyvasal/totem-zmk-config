@@ -9,6 +9,11 @@ manifest:
   projects:
     - name: zmk
       remote: zmkfirmware
+      # Pinned to a fixed ZMK commit so builds are reproducible while we debug the
+      # left-half reconnect issue (was floating on `main`). This SHA also transitively
+      # pins Zephyr via ZMK's own manifest. Bump deliberately, not automatically.
+      # Pinned 2026-07-02 to zmk main @ 484a054 (commit dated 2026-06-29).
+      revision: 484a0547078228f6957ed164523823e39fbedec4
       import: app/west.yml
   self:
     path: config
