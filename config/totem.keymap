@@ -66,7 +66,21 @@
             timeout-ms = <50>;
             key-positions = <8 9>;
             bindings = <&kp RA(N)>;
-            layers = <0>; 
+            layers = <0>;
+        };
+
+        // Left-half-ONLY reset. Both keys (20 = outer [ , 21 = Z) are on the LEFT
+        // half, so this fires WITHOUT the split link and without the right half.
+        // The Enter+[ combo can't do this: Enter is on the right half and needs the
+        // split link to arrive. Diagnostic when stuck:
+        //   fires (left half reboots) -> CPU alive, BLE-stack hang -> keypress recovery viable
+        //   does nothing              -> full MCU freeze -> hardware watchdog needed
+        // No `layers` property -> active on every layer, so it works whatever state
+        // the keymap is in when it wedges.
+        combo_reset_left {
+            timeout-ms = <50>;
+            key-positions = <20 21>;
+            bindings = <&sys_reset>;
         };
     };
 
