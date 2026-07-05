@@ -1,27 +1,10 @@
 config TOTEM_ACTIVE_PROFILE_ONLY
-	bool "Only accept BLE connections from the active profile's device"
-	depends on ZMK_BLE
-	select BT_FILTER_ACCEPT_LIST
-	default n
-	help
-	  Advertise with a filter accept list containing only the currently
-	  selected profile's bonded device, so previously-paired computers on
-	  other profiles cannot connect at all (they are ignored at the radio
-	  level). Implemented by patches/totem-ble.patch on our ZMK fork.
-	  Central (left) half only.
-
-config TOTEM_ADV_THROTTLE
-	bool "Pause advertising after the host has been away for a while"
+	bool "Reject BLE hosts that aren't the active profile"
 	depends on ZMK_BLE
 	default n
 	help
-	  When the active host has been disconnected for
-	  TOTEM_ADV_THROTTLE_TIMEOUT_MIN minutes, stop advertising to save power.
-	  A key press on either half resumes advertising (the first press or two
-	  may be lost). Implemented by patches/totem-ble.patch on our ZMK fork.
-	  Central (left) half only.
-
-config TOTEM_ADV_THROTTLE_TIMEOUT_MIN
-	int "Minutes the host may be away before advertising is paused"
-	depends on TOTEM_ADV_THROTTLE
-	default 5
+	  On the central half, immediately disconnect any host that connects but is
+	  not the currently-selected profile's bonded device. Stops other previously-
+	  paired computers (on inactive profiles) from grabbing the keyboard in the
+	  background, which caused connect/drop churn and battery drain. Implemented
+	  as a module in src/active_profile_only.c (no ZMK patch needed). Central-only.
