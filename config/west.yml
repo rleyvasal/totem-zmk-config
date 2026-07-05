@@ -4,16 +4,17 @@ manifest:
   remotes:
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
-    # Additional modules containing boards/shields/custom code can be listed here as well
-    # See https://docs.zephyrproject.org/3.2.0/develop/west/manifest.html#projects
+    - name: fork
+      url-base: https://github.com/rleyvasal
   projects:
     - name: zmk
-      remote: zmkfirmware
-      # Pinned to a fixed ZMK commit so builds are reproducible while we debug the
-      # left-half reconnect issue (was floating on `main`). This SHA also transitively
-      # pins Zephyr via ZMK's own manifest. Bump deliberately, not automatically.
-      # Pinned 2026-07-02 to zmk main @ 484a054 (commit dated 2026-06-29).
-      revision: 484a0547078228f6957ed164523823e39fbedec4
+      remote: fork
+      # Our fork = official ZMK @ 484a054 (2026-06-29) + patches/totem-ble.patch
+      # (BLE accept-list + advertising throttle). The `totem` branch is regenerated
+      # from a newer upstream SHA by scripts/update-zmk.sh — see patches/README.md.
+      # Pin to a specific fork SHA here instead of the branch if you want fully
+      # reproducible builds.
+      revision: totem
       import: app/west.yml
   self:
     path: config
