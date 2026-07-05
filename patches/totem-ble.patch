@@ -1,5 +1,5 @@
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b..55ab4cf 100644
+index 51b172b..98303c4 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -37,6 +37,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -29,7 +29,7 @@ index 51b172b..55ab4cf 100644
  static struct zmk_ble_profile profiles[ZMK_BLE_PROFILE_COUNT];
  static uint8_t active_profile;
  
-@@ -166,14 +179,55 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
+@@ -166,14 +179,58 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
      }                                                                                              \
      advertising_status = ZMK_ADV_DIR;
  
@@ -41,7 +41,10 @@ index 51b172b..55ab4cf 100644
 +        bt_le_filter_accept_list_clear();
 +        int aerr = bt_le_filter_accept_list_add(zmk_ble_active_profile_addr());
 +        if (aerr) {
-+            LOG_WRN("Failed to add active profile to accept list (%d)", aerr);
++            /* Fail open: don't lock everyone out if the accept list can't be
++             * built -- advertise normally so at least the active host connects. */
++            LOG_WRN("Accept list add failed (%d); advertising unfiltered", aerr);
++            return bt_le_adv_start(ZMK_ADV_CONN_NAME, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL, 0);
 +        }
 +        return bt_le_adv_start(ZMK_ADV_CONN_NAME_FILTERED, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL,
 +                               0);
@@ -86,10 +89,21 @@ index 51b172b..55ab4cf 100644
  int update_advertising(void) {
      int err = 0;
      bt_addr_le_t *addr;
-@@ -216,6 +270,16 @@ int update_advertising(void) {
+@@ -214,7 +271,26 @@ int update_advertising(void) {
+     case ZMK_ADV_CONN + CURR_ADV(ZMK_ADV_NONE):
+         CHECKED_OPEN_ADV();
          break;
-     }
- 
++#if IS_ENABLED(CONFIG_TOTEM_ACTIVE_PROFILE_ONLY) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
++    case ZMK_ADV_CONN + CURR_ADV(ZMK_ADV_CONN):
++        /* Profile switched while already advertising -> restart so the accept
++         * list is rebuilt for the newly-selected profile (stock ZMK skips this
++         * because its advertising is unfiltered). */
++        CHECKED_ADV_STOP();
++        CHECKED_OPEN_ADV();
++        break;
++#endif
++    }
++
 +#if IS_ENABLED(CONFIG_TOTEM_ADV_THROTTLE) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 +    if (advertising_status == ZMK_ADV_CONN) {
 +        /* Advertising with nobody connected -> (re)arm the idle timer. */
@@ -97,13 +111,12 @@ index 51b172b..55ab4cf 100644
 +    } else {
 +        k_work_cancel_delayable(&adv_throttle_work);
 +        adv_throttled = false;
-+    }
+     }
 +#endif
-+
+ 
      return 0;
  };
- 
-@@ -223,6 +287,22 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
+@@ -223,6 +299,22 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
  
  K_WORK_DEFINE(update_advertising_work, update_advertising_callback);
  
@@ -126,7 +139,7 @@ index 51b172b..55ab4cf 100644
  static void clear_profile_bond(uint8_t profile) {
      if (bt_addr_le_cmp(&profiles[profile].peer, BT_ADDR_LE_ANY)) {
          bt_unpair(BT_ID_DEFAULT, &profiles[profile].peer);
-@@ -737,6 +817,10 @@ static int zmk_ble_init(void) {
+@@ -737,6 +829,10 @@ static int zmk_ble_init(void) {
          return err;
      }
  
