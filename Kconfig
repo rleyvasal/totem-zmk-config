@@ -1,0 +1,11 @@
+config TOTEM_ACTIVE_PROFILE_ONLY
+	bool "Only accept BLE connections from the active profile's device"
+	depends on ZMK_BLE
+	default n
+	help
+	  When enabled, the central half immediately disconnects any host that
+	  connects but is not the currently-selected BLE profile's bonded device.
+	  This stops other previously-paired computers (saved on inactive profiles)
+	  from grabbing the keyboard in the background, which caused connect/drop
+	  churn, battery drain, and cross-wake. No device addresses are configured;
+	  the active profile is read at runtime. Central (left) half only.
