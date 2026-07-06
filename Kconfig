@@ -1,13 +1,15 @@
 config TOTEM_ACTIVE_PROFILE_ONLY
-	bool "Reject BLE hosts that aren't the active profile"
+	bool "Keep only the active profile's computer connected (one host at a time)"
 	depends on ZMK_BLE
 	default n
 	help
-	  On the central half, immediately disconnect any host that connects but is
-	  not the currently-selected profile's bonded device. Stops other previously-
-	  paired computers (on inactive profiles) from grabbing the keyboard in the
-	  background, which caused connect/drop churn and battery drain. Implemented
-	  as a module in src/active_profile_only.c (no ZMK patch needed). Central-only.
+	  On the central half: when you switch profiles, disconnect any OTHER profile's
+	  computer that is still connected in the background, and drop non-active hosts
+	  on connect. Fixes cross-talk (keystrokes leaking to the wrong computer) since
+	  ZMK otherwise keeps both connected. RPA-safe: only disconnects a host that
+	  matches a KNOWN, different profile; an unrecognized address is left alone, so
+	  it never wedges your legit active host. Module in
+	  src/active_profile_only.c (no ZMK patch needed). Central-only.
 
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"
