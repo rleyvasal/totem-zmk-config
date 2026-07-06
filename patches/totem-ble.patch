@@ -1,5 +1,5 @@
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b..363b135 100644
+index 51b172b..72e4b92 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -37,6 +37,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -40,7 +40,7 @@ index 51b172b..363b135 100644
  int update_advertising(void) {
      int err = 0;
      bt_addr_le_t *addr;
-@@ -216,6 +240,19 @@ int update_advertising(void) {
+@@ -216,6 +240,18 @@ int update_advertising(void) {
          break;
      }
  
@@ -48,8 +48,7 @@ index 51b172b..363b135 100644
 +    if (advertising_status == ZMK_ADV_CONN) {
 +        /* Advertising with the selected host not connected -> arm the idle timer.
 +         * k_work_schedule (NOT reschedule) so a nearby other device's connect/
-+         * disconnect churn does not keep resetting it -- it fires the timeout after
-+         * we first started advertising, regardless of stray cross-talk. */
++         * disconnect churn does not keep resetting it. */
 +        k_work_schedule(&adv_throttle_work, K_MINUTES(CONFIG_TOTEM_ADV_THROTTLE_TIMEOUT_MIN));
 +    } else {
 +        k_work_cancel_delayable(&adv_throttle_work);
@@ -60,14 +59,14 @@ index 51b172b..363b135 100644
      return 0;
  };
  
-@@ -223,6 +260,23 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
+@@ -223,6 +259,23 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
  
  K_WORK_DEFINE(update_advertising_work, update_advertising_callback);
  
 +#if IS_ENABLED(CONFIG_TOTEM_ADV_THROTTLE) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-+/* A key press on either half (the central sees all positions, including the right
-+ * half's over the split link) resumes advertising after the idle throttle paused
-+ * it. The first press or two may be lost while the host reconnects. */
++/* A key press on either half (the central sees right-half presses over the split
++ * link) resumes advertising after the idle throttle paused it. First press or two
++ * may be lost while the host reconnects. */
 +static int adv_throttle_keypress_listener(const zmk_event_t *eh) {
 +    if (adv_throttled) {
 +        adv_throttled = false;
@@ -84,7 +83,45 @@ index 51b172b..363b135 100644
  static void clear_profile_bond(uint8_t profile) {
      if (bt_addr_le_cmp(&profiles[profile].peer, BT_ADDR_LE_ANY)) {
          bt_unpair(BT_ID_DEFAULT, &profiles[profile].peer);
-@@ -737,6 +791,10 @@ static int zmk_ble_init(void) {
+@@ -284,6 +337,22 @@ static int ble_save_profile(void) {
+ #endif
+ }
+ 
++#if IS_ENABLED(CONFIG_TOTEM_DISCONNECT_ON_PROFILE_SWITCH) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
++/* Disconnect a HOST connection (role peripheral on the central); the split link to
++ * the right half is role central and is skipped. Selected by connection/role, NOT
++ * by address -- so it is immune to macOS resolvable-private-address (RPA) quirks. */
++static void totem_disconnect_host_conn(struct bt_conn *conn, void *data) {
++    struct bt_conn_info info;
++    if (bt_conn_get_info(conn, &info) != 0) {
++        return;
++    }
++    if (info.role != BT_CONN_ROLE_PERIPHERAL) {
++        return;
++    }
++    bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
++}
++#endif
++
+ int zmk_ble_prof_select(uint8_t index) {
+     if (index >= ZMK_BLE_PROFILE_COUNT) {
+         return -ERANGE;
+@@ -294,6 +363,14 @@ int zmk_ble_prof_select(uint8_t index) {
+         return 0;
+     }
+ 
++#if IS_ENABLED(CONFIG_TOTEM_DISCONNECT_ON_PROFILE_SWITCH) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
++    /* Explicit switch to a different profile: force the current computer off so the
++     * newly-selected one can connect fresh. update_advertising() below re-advertises.
++     * Only runs on a real switch (index != active_profile), never on boot restore or
++     * bond clearing (those don't call this), so normal reconnects are untouched. */
++    bt_conn_foreach(BT_CONN_TYPE_LE, totem_disconnect_host_conn, NULL);
++#endif
++
+     active_profile = index;
+     ble_save_profile();
+ 
+@@ -737,6 +814,10 @@ static int zmk_ble_init(void) {
          return err;
      }
  

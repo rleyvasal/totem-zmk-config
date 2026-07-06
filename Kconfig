@@ -27,3 +27,15 @@ config TOTEM_ADV_THROTTLE_TIMEOUT_MIN
 	int "Minutes the selected host may be away before advertising is paused"
 	depends on TOTEM_ADV_THROTTLE
 	default 5
+
+config TOTEM_DISCONNECT_ON_PROFILE_SWITCH
+	bool "Disconnect the current computer when you switch BLE profiles"
+	depends on ZMK_BLE
+	default n
+	help
+	  On an explicit profile switch (&bt BT_SEL), disconnect whatever host is
+	  currently connected so the newly-selected computer can connect fresh -- one
+	  host at a time, no cross-talk. Disconnects by connection/role, NOT by address,
+	  so it never mishandles a macOS RPA (the bug that broke TOTEM_ACTIVE_PROFILE_ONLY).
+	  Normal reconnects after absence are untouched. Via patches/totem-ble.patch on
+	  the ZMK fork. Central-only.
