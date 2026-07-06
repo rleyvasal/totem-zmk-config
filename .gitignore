@@ -1,0 +1,8 @@
+# Local-only working notes, not part of the firmware config
+DEBUGGING-NOTES.md
+
+# macOS junk
+.DS_Store
+
+# Editor backup files
+*~
