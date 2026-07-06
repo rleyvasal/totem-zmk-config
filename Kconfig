@@ -8,3 +8,20 @@ config TOTEM_ACTIVE_PROFILE_ONLY
 	  paired computers (on inactive profiles) from grabbing the keyboard in the
 	  background, which caused connect/drop churn and battery drain. Implemented
 	  as a module in src/active_profile_only.c (no ZMK patch needed). Central-only.
+
+config TOTEM_ADV_THROTTLE
+	bool "Pause advertising after the selected host has been away for a while"
+	depends on ZMK_BLE
+	default n
+	help
+	  When the selected profile's device has been disconnected for
+	  TOTEM_ADV_THROTTLE_TIMEOUT_MIN minutes, stop advertising to save power. A key
+	  press on either half resumes it (the first press or two may be lost). This also
+	  stops cross-talk -- nothing can connect while not advertising -- so it does not
+	  need address-based filtering. Implemented by patches/totem-ble.patch on our ZMK
+	  fork. Central-only.
+
+config TOTEM_ADV_THROTTLE_TIMEOUT_MIN
+	int "Minutes the selected host may be away before advertising is paused"
+	depends on TOTEM_ADV_THROTTLE
+	default 5
