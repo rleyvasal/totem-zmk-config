@@ -11,6 +11,31 @@ config TOTEM_ACTIVE_PROFILE_ONLY
 	  it never wedges your legit active host. Module in
 	  src/active_profile_only.c (no ZMK patch needed). Central-only.
 
+config TOTEM_EXCLUSIVE_HOST
+	bool "Keep only the active profile's computer connected (evict background hosts)"
+	depends on ZMK_BLE
+	default n
+	help
+	  On the central half: disconnect any non-active profile's computer that is
+	  still connected in the background, and drop a non-active host the moment it
+	  connects, so only the selected computer stays connected. Generic -- no
+	  per-host configuration; the active profile is kept, everything else is
+	  evicted. A connection whose address does not yet resolve to a stored profile
+	  is left alone (protects an active host mid-reconnect). Module in
+	  src/exclusive_host.c (no ZMK patch needed). Central-only.
+
+config TOTEM_EXCLUSIVE_DISCONNECT_REASON
+	hex "HCI reason code used to disconnect a background host"
+	depends on TOTEM_EXCLUSIVE_HOST
+	default 0x13
+	help
+	  Passed to bt_conn_disconnect() when evicting a background host. 0x13 =
+	  remote user terminated (default). Other reasons Zephyr accepts: 0x15 (remote
+	  powered off), 0x1A (unsupported remote feature), 0x05 (authentication
+	  failure). Tunable because some hosts (notably macOS) mishandle input after a
+	  plain user-terminated disconnect; a different reason may make the host
+	  reconnect cleanly.
+
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"
 	depends on ZMK_BLE
