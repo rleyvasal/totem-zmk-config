@@ -104,11 +104,12 @@ jobs:
           git commit -am "Bump ZMK to $SHORT"
           git push -f origin "$BR"
 
+          # Fill the committed PR-body template and use it verbatim.
+          sed -e "s|__SHORT__|$SHORT|g" -e "s|__FORKBRANCH__|$FORKBRANCH|g" \
+            .github/zmk-bump-pr-body.md > /tmp/pr-body.md
           gh pr create --base main --head "$BR" \
             --title "Bump ZMK to $SHORT" \
-            --body "Automated ZMK bump. Our patch applied cleanly onto \`zmkfirmware/zmk@$SHORT\` (fork branch \`$FORKBRANCH\`).
-
-          **Before merging:** download this PR's build artifacts, flash the left half, and confirm cross-talk exclusivity + battery/idle behavior still hold. Merge to accept."
+            --body-file /tmp/pr-body.md
 
       - name: Open issue (patch conflicts)
         if: steps.apply.outputs.status == 'conflict'
