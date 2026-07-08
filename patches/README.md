@@ -27,33 +27,41 @@ The patch also carries the retired disconnect-on-profile-switch code behind its 
 (off) `CONFIG_TOTEM_DISCONNECT_ON_PROFILE_SWITCH` flag.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
-`config/west.yml` points at (`rleyvasal/zmk`, branch `totem`). The patch file here
-is the source of truth; the fork is just where the applied result lives.
+`config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
+truth; the fork is just where the applied result lives. Each ZMK base gets its own
+branch **`totem-optimized-<zmk-sha>`** (= that upstream commit + this patch), and
+`config/west.yml`'s `revision:` tracks the current one. The current branch is
+`totem-optimized-484a054`.
 
-## One-time fork setup
+## Updating to a newer ZMK — automated (preferred)
 
-1. Fork `zmkfirmware/zmk` to `rleyvasal/zmk` on GitHub (web UI) if it doesn't exist.
-2. Create/refresh the `totem` branch = pinned upstream + this patch, and push it:
+`.github/workflows/zmk-bump.yml` runs twice a year (and on demand). It applies this
+patch onto ZMK `main` HEAD and:
 
-   ```sh
-   git clone https://github.com/rleyvasal/zmk.git ~/zmk        # or reuse existing
-   cd ~/zmk
-   git remote add upstream https://github.com/zmkfirmware/zmk.git   # skip if present
-   git fetch upstream
-   git checkout -B totem 484a0547078228f6957ed164523823e39fbedec4
-   git apply ~/totem-zmk-config/patches/totem-ble.patch
-   git commit -am "Totem BLE: advertising throttle"
-   git push -f origin totem
-   ```
+- **applies cleanly** → pushes `totem-optimized-<new-sha>` to the fork and opens a
+  **config PR** that repoints `config/west.yml` at it. The PR's CI build gives you
+  flashable artifacts — flash, test cross-talk + battery, then **merge to accept**.
+  Nothing lands on the tracked branch until you merge.
+- **conflicts** (upstream moved the code the patch touches) → opens an **issue**;
+  rebase by hand (below).
 
-Then push this config repo — CI builds against `rleyvasal/zmk@totem`.
+Requires the `ZMK_FORK_TOKEN` secret (fine-grained PAT, Contents:write on the fork).
 
-## Updating to a newer ZMK
+## Updating / fixing by hand
+
+Only needed for the first-time branch, or when the workflow reports a conflict:
 
 ```sh
-scripts/update-zmk.sh <new-upstream-sha>
+git clone https://github.com/rleyvasal/zmk.git ~/zmk        # or reuse existing
+cd ~/zmk
+git remote add upstream https://github.com/zmkfirmware/zmk.git   # skip if present
+git fetch upstream
+git checkout -B totem-optimized-<new-short-sha> <new-upstream-sha>
+git apply ~/totem-zmk-config/patches/totem-ble.patch            # fix hunks if it fails
+git commit -am "Totem optimized (throttle + idle-disconnect) on ZMK <new-short-sha>"
+git push -f origin totem-optimized-<new-short-sha>
 ```
 
-Re-applies the patch onto the new SHA and force-pushes `totem`. If upstream moved
-the code the patch touches, `git apply` fails — fix the hunks by hand, then
-regenerate: `git -C ~/zmk diff app/src/ble.c > patches/totem-ble.patch`.
+If you fixed hunks by hand, regenerate the patch:
+`git -C ~/zmk diff <new-upstream-sha> -- app/src/ble.c > patches/totem-ble.patch`.
+Then set `config/west.yml` `revision:` to the new branch and push the config repo.

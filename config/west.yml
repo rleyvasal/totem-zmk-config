@@ -9,12 +9,14 @@ manifest:
   projects:
     - name: zmk
       remote: fork
-      # Our fork = official ZMK @ 484a054 (2026-06-29) + patches/totem-ble.patch
-      # (advertising throttle ONLY -- no accept-list; that broke macOS and was
-      # dropped). The `totem` branch is regenerated from a newer upstream SHA by
-      # scripts/update-zmk.sh -- see patches/README.md. Pin to a fork SHA here
-      # instead of the branch for fully reproducible builds.
-      revision: totem
+      # Our fork = official ZMK + patches/totem-ble.patch (advertising throttle,
+      # idle-disconnect/go-dark, and the retired disconnect-on-switch behind its off
+      # flag). Each ZMK base gets its own branch `totem-optimized-<zmk-sha>`; this
+      # revision tracks the current one (base ZMK 484a054, 2026-06-29). Bumps are
+      # prepared by .github/workflows/zmk-bump.yml, which opens a PR with test
+      # artifacts -- see patches/README.md. Pin to a fork SHA here instead of the
+      # branch for fully reproducible builds.
+      revision: totem-optimized-484a054
       import: app/west.yml
   self:
     path: config

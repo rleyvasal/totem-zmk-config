@@ -1,0 +1,110 @@
+name: Bump ZMK
+
+# Twice a year (and on demand), try our patch on the newest ZMK and, if it still
+# applies, open a PR whose CI build produces flashable artifacts to test BEFORE it
+# goes live. Never force-updates the branch config/west.yml tracks -- you approve by
+# merging the PR. If the patch no longer applies, it opens an issue instead.
+#
+# Setup required (one-time):
+#   - Secret ZMK_FORK_TOKEN: a fine-grained PAT with Contents:write on rleyvasal/zmk
+#     (needed to push the prepared bump branch to the fork; GITHUB_TOKEN can't reach
+#     another repo).
+#   - config/west.yml's zmk project must track a branch this workflow manages
+#     (e.g. totem-optimized-*). Adjust FORK_REPO / names below to taste.
+
+on:
+  schedule:
+    - cron: '0 6 1 1,7 *'   # 06:00 UTC, Jan 1 and Jul 1
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "ZMK ref to bump to (blank = zmkfirmware/zmk main HEAD)"
+        required: false
+
+permissions:
+  contents: write        # push the config bump branch + open the PR
+  pull-requests: write
+  issues: write
+
+env:
+  UPSTREAM: https://github.com/zmkfirmware/zmk.git
+  FORK_REPO: rleyvasal/zmk
+  PATCH: patches/totem-ble.patch
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout config repo
+        uses: actions/checkout@v4
+
+      - name: Resolve target ZMK commit
+        id: ref
+        run: |
+          set -euo pipefail
+          REF="${{ github.event.inputs.ref }}"
+          if [ -z "$REF" ]; then
+            REF=$(git ls-remote "$UPSTREAM" main | cut -f1)
+          fi
+          echo "sha=$REF" >> "$GITHUB_OUTPUT"
+          echo "short=${REF:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply our patch onto the new ZMK
+        id: apply
+        env:
+          FORK_TOKEN: ${{ secrets.ZMK_FORK_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.ref.outputs.sha }}"
+          FORKBRANCH="totem-optimized-${{ steps.ref.outputs.short }}"
+          echo "forkbranch=$FORKBRANCH" >> "$GITHUB_OUTPUT"
+
+          git clone --no-checkout "$UPSTREAM" zmk
+          git -C zmk fetch --depth 1 origin "$SHA"
+          git -C zmk checkout -B "$FORKBRANCH" "$SHA"
+          git -C zmk config user.name  "zmk-bump-bot"
+          git -C zmk config user.email "actions@users.noreply.github.com"
+
+          if git -C zmk apply --index "../$PATCH"; then
+            git -C zmk commit -m "Totem optimized (throttle + idle-disconnect) on ZMK ${{ steps.ref.outputs.short }}"
+            git -C zmk push -f "https://x-access-token:${FORK_TOKEN}@github.com/${FORK_REPO}.git" "$FORKBRANCH"
+            echo "status=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open bump PR (clean)
+        if: steps.apply.outputs.status == 'clean'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHORT="${{ steps.ref.outputs.short }}"
+          FORKBRANCH="${{ steps.apply.outputs.forkbranch }}"
+          BR="zmk-bump-$SHORT"
+
+          git config user.name  "zmk-bump-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -B "$BR"
+          # Retarget only the zmk project's revision (range from its name to the next
+          # revision: line), leaving defaults.revision untouched.
+          sed -i '/name: zmk/,/revision:/ s|revision: .*|revision: '"$FORKBRANCH"'|' config/west.yml
+          git commit -am "Bump ZMK to $SHORT"
+          git push -f origin "$BR"
+
+          gh pr create --base main --head "$BR" \
+            --title "Bump ZMK to $SHORT" \
+            --body "Automated ZMK bump. Our patch applied cleanly onto \`zmkfirmware/zmk@$SHORT\` (fork branch \`$FORKBRANCH\`).
+
+          **Before merging:** download this PR's build artifacts, flash the left half, and confirm cross-talk exclusivity + battery/idle behavior still hold. Merge to accept."
+
+      - name: Open issue (patch conflicts)
+        if: steps.apply.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHORT="${{ steps.ref.outputs.short }}"
+          gh issue create \
+            --title "ZMK bump $SHORT: patch needs a manual rebase" \
+            --body "\`$PATCH\` no longer applies onto \`zmkfirmware/zmk@$SHORT\` (upstream moved the code it touches). Rebase the \`app/src/ble.c\` changes by hand, regenerate the patch, then re-run this workflow."
