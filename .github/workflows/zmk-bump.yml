@@ -59,6 +59,15 @@ jobs:
           FORKBRANCH="totem-optimized-${{ steps.ref.outputs.short }}"
           echo "forkbranch=$FORKBRANCH" >> "$GITHUB_OUTPUT"
 
+          # If west.yml already tracks this branch, ZMK main hasn't moved past the
+          # pinned base -> nothing to bump. Exit cleanly without touching the fork.
+          CURRENT=$(awk '/revision:.*totem-optimized/{print $2; exit}' config/west.yml || true)
+          if [ "$CURRENT" = "$FORKBRANCH" ]; then
+            echo "Already on $FORKBRANCH; ZMK main is unchanged. Nothing to bump."
+            echo "status=noop" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           git clone "$UPSTREAM" zmk
           git -C zmk checkout -B "$FORKBRANCH" "$SHA"
           git -C zmk config user.name  "zmk-bump-bot"
@@ -88,6 +97,10 @@ jobs:
           # Retarget only the zmk project's revision (range from its name to the next
           # revision: line), leaving defaults.revision untouched.
           sed -i '/name: zmk/,/revision:/ s|revision: .*|revision: '"$FORKBRANCH"'|' config/west.yml
+          if git diff --quiet -- config/west.yml; then
+            echo "west.yml unchanged; nothing to bump."
+            exit 0
+          fi
           git commit -am "Bump ZMK to $SHORT"
           git push -f origin "$BR"
 
