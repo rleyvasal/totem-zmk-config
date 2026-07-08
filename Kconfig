@@ -54,18 +54,19 @@ config TOTEM_ADV_THROTTLE_TIMEOUT_MIN
 	default 5
 
 config TOTEM_IDLE_DISCONNECT
-	bool "Disconnect the active host after a long keypress-idle window"
-	depends on ZMK_BLE
+	bool "Disconnect the active host after a long keypress-idle window (then go dark)"
+	depends on TOTEM_ADV_THROTTLE
 	default n
 	help
 	  On the central half: after CONFIG_TOTEM_IDLE_DISCONNECT_MIN minutes with no
-	  keypress, disconnect the active host. macOS keeps its BLE link alive during
-	  sleep, so the keyboard otherwise stays connected-idle overnight and the
-	  advertising throttle never engages. Dropping the idle host lets the throttle
-	  pause advertising -> lower idle drain. A present (awake) host just reconnects
-	  cleanly (the same path the exclusive-host module relies on); the only cost is
-	  the first keystroke after a long idle. Pairs with CONFIG_TOTEM_ADV_THROTTLE.
-	  Module in src/idle_disconnect.c (no ZMK patch needed). Central-only.
+	  keypress, disconnect the active host AND immediately pause advertising ("go
+	  dark"), so it cannot instantly reconnect and wake the host. A key press resumes
+	  advertising (via the throttle listener) and the host reconnects; an asleep/away
+	  host simply stays gone, so idle drain falls to the throttled rate with no wake
+	  storm. macOS keeps its BLE link alive during sleep, so without this the keyboard
+	  stays connected-idle overnight. Requires TOTEM_ADV_THROTTLE (shares its
+	  advertising-pause machinery). Implemented in patches/totem-ble.patch on the ZMK
+	  fork, not a standalone module. Central-only.
 
 config TOTEM_IDLE_DISCONNECT_MIN
 	int "Minutes without a keypress before the active host is disconnected"

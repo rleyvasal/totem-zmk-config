@@ -27,7 +27,7 @@ git -C "$ZMK_DIR" checkout -B totem "$NEW_SHA"
 # hunks by hand, then regenerate the patch with:
 #   git -C "$ZMK_DIR" diff app/src/ble.c > patches/totem-ble.patch
 git -C "$ZMK_DIR" apply "$PATCH"
-git -C "$ZMK_DIR" commit -am "Totem BLE: advertising throttle"
+git -C "$ZMK_DIR" commit -am "Totem BLE: throttle + idle-disconnect"
 git -C "$ZMK_DIR" push -f origin totem
 
 echo

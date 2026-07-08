@@ -1,7 +1,9 @@
-# ZMK patch — advertising throttle
+# ZMK patch — advertising throttle + idle-disconnect
 
-`totem-ble.patch` is a small change to ZMK's `app/src/ble.c`, gated behind
-`CONFIG_TOTEM_ADV_THROTTLE` (defined in this repo's `Kconfig`), central-half only:
+`totem-ble.patch` is a small change to ZMK's `app/src/ble.c`, central-half only,
+gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
+
+**Advertising throttle** (`CONFIG_TOTEM_ADV_THROTTLE`):
 
 - When the **selected** profile's device has been disconnected for
   `CONFIG_TOTEM_ADV_THROTTLE_TIMEOUT_MIN` minutes, **stop advertising** to save
@@ -11,6 +13,18 @@
 - Because it stops advertising, it also stops cross-talk for free — nothing can
   connect while the keyboard isn't advertising. No address-based filtering (that's
   what broke the earlier accept-list / drop-module reconnect).
+
+**Idle-disconnect** (`CONFIG_TOTEM_IDLE_DISCONNECT`, requires the throttle):
+
+- After `CONFIG_TOTEM_IDLE_DISCONNECT_MIN` minutes with no keypress, **disconnect
+  the active host and immediately go dark** (pause advertising) so it can't
+  instantly reconnect and wake the host. A key press resumes advertising and the
+  host reconnects. This lets an asleep host — deep *or* light sleep (plugged in /
+  external monitor) — stay gone so drain drops to the throttled rate, without the
+  wake storm a plain disconnect caused.
+
+The patch also carries the retired disconnect-on-profile-switch code behind its own
+(off) `CONFIG_TOTEM_DISCONNECT_ON_PROFILE_SWITCH` flag.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`, branch `totem`). The patch file here

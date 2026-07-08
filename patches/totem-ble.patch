@@ -1,5 +1,5 @@
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b..72e4b92 100644
+index 51b172b9..7f8280ba 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -37,6 +37,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -13,7 +13,7 @@ index 51b172b..72e4b92 100644
  #if IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY)
  #include <zmk/events/keycode_state_changed.h>
  
-@@ -174,6 +178,26 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
+@@ -174,6 +178,55 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
      }                                                                                              \
      advertising_status = ZMK_ADV_CONN;
  
@@ -37,15 +37,60 @@ index 51b172b..72e4b92 100644
 +}
 +#endif
 +
++#if IS_ENABLED(CONFIG_TOTEM_IDLE_DISCONNECT) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
++static struct k_work_delayable idle_disconnect_work;
++/* Set when the idle timer force-disconnects the host, so the update_advertising()
++ * that runs on that disconnect goes dark immediately instead of re-advertising.
++ * Otherwise the host (especially a plugged-in / light-sleep Mac) reconnects within a
++ * second and wakes the display, and it repeats every timeout. Cleared as it fires. */
++static bool idle_go_dark = false;
++
++/* After CONFIG_TOTEM_IDLE_DISCONNECT_MIN minutes with no keypress, drop the active
++ * host so advertising can pause. A present host reconnects on the next keypress
++ * (which resumes advertising); an asleep/away host simply stays gone. */
++static void idle_disconnect_work_handler(struct k_work *work) {
++    if (!zmk_ble_active_profile_is_connected()) {
++        return;
++    }
++    struct bt_conn *conn = zmk_ble_active_profile_conn();
++    if (conn == NULL) {
++        return;
++    }
++    LOG_INF("Active host idle for %d min; disconnecting and going dark",
++            CONFIG_TOTEM_IDLE_DISCONNECT_MIN);
++    idle_go_dark = true;
++    /* 0x13 (remote user terminated) -- proven to let macOS reconnect and type
++     * cleanly (see the exclusive-host module). */
++    bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
++    bt_conn_unref(conn);
++}
++#endif
++
  int update_advertising(void) {
      int err = 0;
      bt_addr_le_t *addr;
-@@ -216,6 +240,18 @@ int update_advertising(void) {
+@@ -216,6 +269,34 @@ int update_advertising(void) {
          break;
      }
  
 +#if IS_ENABLED(CONFIG_TOTEM_ADV_THROTTLE) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 +    if (advertising_status == ZMK_ADV_CONN) {
++#if IS_ENABLED(CONFIG_TOTEM_IDLE_DISCONNECT)
++        if (idle_go_dark) {
++            /* We just force-disconnected the idle host; skip the advertising window
++             * entirely so it cannot immediately reconnect and wake the display. A key
++             * press resumes advertising via the throttle listener below. */
++            idle_go_dark = false;
++            err = bt_le_adv_stop();
++            if (!err) {
++                advertising_status = ZMK_ADV_NONE;
++                adv_throttled = true;
++                k_work_cancel_delayable(&adv_throttle_work);
++                return 0;
++            }
++            LOG_ERR("Failed to go dark after idle disconnect (err %d)", err);
++        }
++#endif
 +        /* Advertising with the selected host not connected -> arm the idle timer.
 +         * k_work_schedule (NOT reschedule) so a nearby other device's connect/
 +         * disconnect churn does not keep resetting it. */
@@ -59,7 +104,7 @@ index 51b172b..72e4b92 100644
      return 0;
  };
  
-@@ -223,6 +259,23 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
+@@ -223,6 +304,29 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
  
  K_WORK_DEFINE(update_advertising_work, update_advertising_callback);
  
@@ -68,6 +113,12 @@ index 51b172b..72e4b92 100644
 + * link) resumes advertising after the idle throttle paused it. First press or two
 + * may be lost while the host reconnects. */
 +static int adv_throttle_keypress_listener(const zmk_event_t *eh) {
++#if IS_ENABLED(CONFIG_TOTEM_IDLE_DISCONNECT)
++    /* Any keypress means the host is present -> restart the idle countdown. This is
++     * also the only path that resumes advertising after an idle-disconnect, so it
++     * re-arms the timer for the next idle period once the host has reconnected. */
++    k_work_reschedule(&idle_disconnect_work, K_MINUTES(CONFIG_TOTEM_IDLE_DISCONNECT_MIN));
++#endif
 +    if (adv_throttled) {
 +        adv_throttled = false;
 +        LOG_INF("Key pressed; resuming advertising");
@@ -83,7 +134,7 @@ index 51b172b..72e4b92 100644
  static void clear_profile_bond(uint8_t profile) {
      if (bt_addr_le_cmp(&profiles[profile].peer, BT_ADDR_LE_ANY)) {
          bt_unpair(BT_ID_DEFAULT, &profiles[profile].peer);
-@@ -284,6 +337,22 @@ static int ble_save_profile(void) {
+@@ -284,6 +388,22 @@ static int ble_save_profile(void) {
  #endif
  }
  
@@ -106,7 +157,7 @@ index 51b172b..72e4b92 100644
  int zmk_ble_prof_select(uint8_t index) {
      if (index >= ZMK_BLE_PROFILE_COUNT) {
          return -ERANGE;
-@@ -294,6 +363,14 @@ int zmk_ble_prof_select(uint8_t index) {
+@@ -294,6 +414,14 @@ int zmk_ble_prof_select(uint8_t index) {
          return 0;
      }
  
@@ -121,12 +172,15 @@ index 51b172b..72e4b92 100644
      active_profile = index;
      ble_save_profile();
  
-@@ -737,6 +814,10 @@ static int zmk_ble_init(void) {
+@@ -737,6 +865,13 @@ static int zmk_ble_init(void) {
          return err;
      }
  
 +#if IS_ENABLED(CONFIG_TOTEM_ADV_THROTTLE) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 +    k_work_init_delayable(&adv_throttle_work, adv_throttle_work_handler);
++#if IS_ENABLED(CONFIG_TOTEM_IDLE_DISCONNECT)
++    k_work_init_delayable(&idle_disconnect_work, idle_disconnect_work_handler);
++#endif
 +#endif
 +
  #if IS_ENABLED(CONFIG_SETTINGS)
