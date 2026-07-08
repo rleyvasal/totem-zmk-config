@@ -59,8 +59,7 @@ jobs:
           FORKBRANCH="totem-optimized-${{ steps.ref.outputs.short }}"
           echo "forkbranch=$FORKBRANCH" >> "$GITHUB_OUTPUT"
 
-          git clone --no-checkout "$UPSTREAM" zmk
-          git -C zmk fetch --depth 1 origin "$SHA"
+          git clone "$UPSTREAM" zmk
           git -C zmk checkout -B "$FORKBRANCH" "$SHA"
           git -C zmk config user.name  "zmk-bump-bot"
           git -C zmk config user.email "actions@users.noreply.github.com"
