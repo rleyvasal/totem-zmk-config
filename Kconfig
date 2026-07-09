@@ -1,16 +1,3 @@
-config TOTEM_ACTIVE_PROFILE_ONLY
-	bool "Keep only the active profile's computer connected (one host at a time)"
-	depends on ZMK_BLE
-	default n
-	help
-	  On the central half: when you switch profiles, disconnect any OTHER profile's
-	  computer that is still connected in the background, and drop non-active hosts
-	  on connect. Fixes cross-talk (keystrokes leaking to the wrong computer) since
-	  ZMK otherwise keeps both connected. RPA-safe: only disconnects a host that
-	  matches a KNOWN, different profile; an unrecognized address is left alone, so
-	  it never wedges your legit active host. Module in
-	  src/active_profile_only.c (no ZMK patch needed). Central-only.
-
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
 	depends on ZMK_BLE
@@ -72,15 +59,3 @@ config TOTEM_IDLE_DISCONNECT_MIN
 	int "Minutes without a keypress before the active host is disconnected"
 	depends on TOTEM_IDLE_DISCONNECT
 	default 20
-
-config TOTEM_DISCONNECT_ON_PROFILE_SWITCH
-	bool "Disconnect the current computer when you switch BLE profiles"
-	depends on ZMK_BLE
-	default n
-	help
-	  On an explicit profile switch (&bt BT_SEL), disconnect whatever host is
-	  currently connected so the newly-selected computer can connect fresh -- one
-	  host at a time, no cross-talk. Disconnects by connection/role, NOT by address,
-	  so it never mishandles a macOS RPA (the bug that broke TOTEM_ACTIVE_PROFILE_ONLY).
-	  Normal reconnects after absence are untouched. Via patches/totem-ble.patch on
-	  the ZMK fork. Central-only.

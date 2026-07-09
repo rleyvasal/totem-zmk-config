@@ -9,9 +9,9 @@ manifest:
   projects:
     - name: zmk
       remote: fork
-      # Our fork = official ZMK + patches/totem-ble.patch (advertising throttle,
-      # idle-disconnect/go-dark, and the retired disconnect-on-switch behind its off
-      # flag). Each ZMK base gets its own branch `totem-optimized-<zmk-sha>`; this
+      # Our fork = official ZMK + patches/totem-ble.patch (advertising throttle +
+      # idle-disconnect/go-dark). Each ZMK base gets its own branch
+      # `totem-optimized-<zmk-sha>`; this
       # revision tracks the current one (base ZMK 484a054, 2026-06-29). Bumps are
       # prepared by .github/workflows/zmk-bump.yml, which opens a PR with test
       # artifacts -- see patches/README.md. Pin to a fork SHA here instead of the

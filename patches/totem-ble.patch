@@ -1,5 +1,5 @@
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b9..2df0759a 100644
+index 51b172b9..0f38c881 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -37,6 +37,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -156,45 +156,7 @@ index 51b172b9..2df0759a 100644
  static void clear_profile_bond(uint8_t profile) {
      if (bt_addr_le_cmp(&profiles[profile].peer, BT_ADDR_LE_ANY)) {
          bt_unpair(BT_ID_DEFAULT, &profiles[profile].peer);
-@@ -284,6 +403,22 @@ static int ble_save_profile(void) {
- #endif
- }
- 
-+#if IS_ENABLED(CONFIG_TOTEM_DISCONNECT_ON_PROFILE_SWITCH) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-+/* Disconnect a HOST connection (role peripheral on the central); the split link to
-+ * the right half is role central and is skipped. Selected by connection/role, NOT
-+ * by address -- so it is immune to macOS resolvable-private-address (RPA) quirks. */
-+static void totem_disconnect_host_conn(struct bt_conn *conn, void *data) {
-+    struct bt_conn_info info;
-+    if (bt_conn_get_info(conn, &info) != 0) {
-+        return;
-+    }
-+    if (info.role != BT_CONN_ROLE_PERIPHERAL) {
-+        return;
-+    }
-+    bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-+}
-+#endif
-+
- int zmk_ble_prof_select(uint8_t index) {
-     if (index >= ZMK_BLE_PROFILE_COUNT) {
-         return -ERANGE;
-@@ -294,6 +429,14 @@ int zmk_ble_prof_select(uint8_t index) {
-         return 0;
-     }
- 
-+#if IS_ENABLED(CONFIG_TOTEM_DISCONNECT_ON_PROFILE_SWITCH) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-+    /* Explicit switch to a different profile: force the current computer off so the
-+     * newly-selected one can connect fresh. update_advertising() below re-advertises.
-+     * Only runs on a real switch (index != active_profile), never on boot restore or
-+     * bond clearing (those don't call this), so normal reconnects are untouched. */
-+    bt_conn_foreach(BT_CONN_TYPE_LE, totem_disconnect_host_conn, NULL);
-+#endif
-+
-     active_profile = index;
-     ble_save_profile();
- 
-@@ -737,6 +880,13 @@ static int zmk_ble_init(void) {
+@@ -737,6 +856,13 @@ static int zmk_ble_init(void) {
          return err;
      }
  

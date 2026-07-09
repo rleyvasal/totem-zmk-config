@@ -23,9 +23,6 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
   external monitor) — stay gone so drain drops to the throttled rate, without the
   wake storm a plain disconnect caused.
 
-The patch also carries the retired disconnect-on-profile-switch code behind its own
-(off) `CONFIG_TOTEM_DISCONNECT_ON_PROFILE_SWITCH` flag.
-
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
 truth; the fork is just where the applied result lives. Each ZMK base gets its own
