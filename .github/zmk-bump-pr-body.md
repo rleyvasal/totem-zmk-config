@@ -6,6 +6,7 @@ Automated ZMK bump (policy **A**: stable releases by default; `main`/arbitrary r
 | **Target label** | `__LABEL__` |
 | **Upstream commit** | `zmkfirmware/zmk@__SHA__` (`__SHORT__`) |
 | **Fork branch** | `__FORKBRANCH__` |
+| **Fork tip (west pin)** | `__FORK_TIP__` |
 | **Release** | __RELEASE_TAG__ |
 | **Release notes** | __RELEASE_URL__ |
 

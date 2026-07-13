@@ -1,0 +1,67 @@
+name: Verify ZMK patch symbols
+
+# Fail the build early if west.yml points at a ZMK revision that does not contain
+# our patched throttle / go-dark / boost hooks (wrong fork, unpatched main, etc.).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-zmk-patch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout config
+        uses: actions/checkout@v5
+
+      - name: Resolve west.yml zmk revision
+        id: rev
+        run: |
+          set -euo pipefail
+          REV=$(awk '/name: zmk/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
+          if [ -z "$REV" ]; then
+            echo "::error::Could not parse zmk revision from config/west.yml"
+            exit 1
+          fi
+          echo "revision=$REV" >> "$GITHUB_OUTPUT"
+          echo "Tracking ZMK revision: $REV"
+
+      - name: Fetch ZMK at pinned revision
+        run: |
+          set -euo pipefail
+          REV="${{ steps.rev.outputs.revision }}"
+          git clone --filter=blob:none --no-checkout https://github.com/rleyvasal/zmk.git zmk
+          git -C zmk fetch --depth 1 origin "$REV"
+          git -C zmk checkout FETCH_HEAD
+          git -C zmk rev-parse HEAD
+
+      - name: Require patch symbols in app/src/ble.c
+        run: |
+          set -euo pipefail
+          missing=0
+          # Symbols only present when patches/zmk-ble.patch is applied on the fork.
+          for sym in \
+            adv_throttled \
+            idle_go_dark \
+            idle_disconnect_work \
+            totem_adv_boost_active \
+            CONFIG_TOTEM_IDLE_DISCONNECT \
+            CONFIG_TOTEM_ADV_BOOST
+          do
+            if ! git -C zmk grep -q "$sym" -- app/src/ble.c; then
+              echo "::error::Missing '${sym}' in app/src/ble.c — fork tip is not our patched ZMK"
+              missing=1
+            else
+              echo "OK  ${sym}"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::config/west.yml revision does not include patches/zmk-ble.patch hooks. Re-apply the patch to rleyvasal/zmk and re-pin the SHA."
+            exit 1
+          fi
+          echo "All expected Totem/ZMK patch symbols present."

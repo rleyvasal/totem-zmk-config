@@ -1,16 +1,42 @@
 # Totem ZMK Configuration
 
-Custom ZMK firmware configuration for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/totem) split keyboard with **Dual battery monitor and ZMK Studio support**.
+Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/totem) split keyboard, tuned for **two computers (macOS + Windows)**, **battery life**, and a Colemak-DH daily-driver layout.
 
 ## Features
 
-- **Colemak-DH Matrix layout** optimized for ortholinear keyboards
-- **Dual battery monitoring** - Reports battery levels for both keyboard halves
-- **ZMK Studio unlock** for live keymap editing (not in original Totem config)
-- **5 layers** optimized for Python and JavaScript development
-- **Homerow mods** for comfortable modifier access
-- **Mouse support** with scroll and movement controls
-- **Combos** for quick access to ESC, dictation, and special characters
+- **Dual host Bluetooth** — exclusive-host module keeps only the active profile connected (no cross-talk)
+- **Battery saving** — advertising throttle when the host is away; idle disconnect + “go dark” overnight without wake storms
+- **Faster profile switch** — dense advertising boost after `&bt BT_SEL`
+- **Dual battery monitoring** — reports both halves to the host
+- **Colemak-DH** layout with homerow mods, mouse layer, and combos
+- **ZMK Studio** — **disabled** (`CONFIG_ZMK_STUDIO=n`); re-enable in `config/totem.conf` if you want live keymap editing
+
+## Dual computer + battery (overview)
+
+| Piece | Role |
+|---|---|
+| `src/exclusive_host.c` | Evict non-active host on connect / profile switch |
+| `patches/zmk-ble.patch` on fork `rleyvasal/zmk` | Throttle, idle go-dark, adv boost (in ZMK `ble.c`) |
+| `config/west.yml` | Pins a **commit SHA** of the patched fork (reproducible builds) |
+
+Human-readable fork branch names look like `zmk-optimized-<base-sha>`; west tracks the **SHA** of the applied tip. See `patches/README.md` and `.github/workflows/zmk-bump.yml` (stable-release bumps).
+
+### Switching computers
+
+On the ADJ layer, press the target profile’s `&bt BT_SEL`. The previous machine is disconnected automatically; the new one reconnects (typically a few seconds).
+
+### Tuning timers (after a week of real use)
+
+Defaults in `config/totem.conf` — change only after you’ve lived with them:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `CONFIG_TOTEM_ADV_THROTTLE_TIMEOUT_MIN` | 5 | Pause advertising after host away this long |
+| `CONFIG_TOTEM_IDLE_DISCONNECT_MIN` | 20 | Drop host + go dark after no keypresses |
+| `CONFIG_TOTEM_ADV_BOOST_SEC` | 12 | Dense 30–60 ms advertising after profile switch |
+
+- First key(s) after idle/dark may be lost while reconnecting — expected.
+- Windows reconnect is often slower than macOS (host stack); firmware boost helps discovery only.
 
 ## Layers
 
@@ -18,19 +44,16 @@ Custom ZMK firmware configuration for the [GEIGEIGEIST Totem](https://github.com
 Main typing layer with homerow mods (GUI/Alt/Shift/Ctrl).
 
 ### CODE
-Optimized symbol layer for Python/JavaScript:
-- Brackets `[]` `()` on homerow for easy access
-- Numbers arranged as numpad on right side
-- Frequently-used symbols (`_`, `@`, `#`, `"`, `'`) in comfortable positions
+Symbol layer for Python/JavaScript (brackets, numpad-style numbers, common symbols).
 
 ### NAV
-Navigation and mouse control layer with arrow keys, page navigation, and mouse movements.
+Navigation and mouse control.
 
 ### MOD
-System controls including media keys, screen lock macros, and brightness/volume controls.
+Media, lock macros (Mac/Win), volume/brightness.
 
 ### ADJ
-Function keys, Bluetooth device switching, and ZMK Studio unlock.
+Function keys and Bluetooth profile select / clear. (No Studio unlock — Studio is off.)
 
 ## Keymap Visualization
 
@@ -38,85 +61,53 @@ Function keys, Bluetooth device switching, and ZMK Studio unlock.
 
 ## Installation
 
-1. Fork this repository
-2. Enable GitHub Actions in your fork
-3. Modify `config/totem.keymap` as needed
-4. Push changes to trigger automatic firmware build
-5. Download firmware from Actions artifacts
-6. Flash the halves — see [Flashing & Re-pairing the Split Halves](#flashing--re-pairing-the-split-halves) (**order matters**)
+1. Fork this repository  
+2. Enable GitHub Actions  
+3. Edit `config/totem.keymap` / `config/totem.conf` as needed  
+4. Push to build firmware  
+5. Download artifacts and flash — **order matters** (below)  
+
+CI also runs **Verify ZMK patch symbols** so a bad/unpatched west pin fails before a useless flash.
 
 ## Flashing & Re-pairing the Split Halves
 
 > [!IMPORTANT]
-> **Reset BOTH halves *before* flashing EITHER half.**
-> If you reset-and-flash one half at a time (reset left → flash left → reset right →
-> flash right), the left half bonds to the right half's *old* identity and then can't
-> re-bond once the right is reset. The halves then silently fail to connect, and only
-> the left half types.
+> **Reset BOTH halves *before* flashing EITHER half.**  
+> Resetting one half at a time can leave the left bonded to the right’s old identity.
 
 All `.uf2` files must come from the **same** GitHub Actions run.
 
-### Re-pairing the halves (first-time setup, or after any firmware/BLE change)
+### Re-pairing (first setup, or after firmware/BLE changes)
 
-Do these in this exact order:
+1. **Reset BOTH halves** (bootloader, copy settings reset UF2 to each)  
+2. **Flash firmware** left then right from the same build  
+3. **Power both on together** so the left (central) bonds to the right  
 
-1. **Reset BOTH halves first** — put each into bootloader (double-tap reset) and copy:
-   - `settings_reset-xiao_ble_nrf52840_zmk.uf2` → **left**
-   - `settings_reset-xiao_ble_nrf52840_zmk.uf2` → **right**
-2. **Then flash the keyboard firmware** (matching halves):
-   - `totem_left-xiao_ble_nrf52840_zmk.uf2` → **left**
-   - `totem_right-xiao_ble_nrf52840_zmk.uf2` → **right**
-3. **Power both halves on at the same time** so the left (central) discovers and bonds
-   to the right (peripheral) cleanly.
+### Routine keymap-only update
 
-### Routine keymap update (no re-pairing needed)
-
-If you only changed the keymap, skip the reset and just flash both halves with the new
-`totem_left` / `totem_right` files.
+Skip settings reset; flash both halves with the new left/right UF2s.
 
 > [!NOTE]
-> The **left half is the central** — it talks to the computer and types over USB/BLE.
-> The **right half is the peripheral** — it relays its keys to the left over BLE and
-> **never types over its own USB connection**. Test the right half by pressing its keys
-> while the left half is connected to the computer.
+> **Left = central** (talks to the computer). **Right = peripheral** (relays keys over BLE; does not type over its own USB).
 
 ## Hardware
 
-- **Keyboard:** GEIGEIGEIST Totem (38-key split)
-- **Controller:** Seeeduino XIAO BLE (nRF52840)
-- **Firmware:** ZMK with Studio support
+- **Keyboard:** GEIGEIGEIST Totem (38-key split)  
+- **Controller:** Seeeduino XIAO BLE (nRF52840)  
+- **Firmware:** ZMK (patched fork for dual-host / battery behavior)  
 
-## Special Features
+## Combos & macros
 
-### Combos
-- **Q + W:** ESC
-- **N + M:** Dictation (Alt+Space)
-- **U + Y:** ñ character
-
-### Macros
-- **Mac Lock:** Cmd+Ctrl+Q
-- **Win Lock:** Win+L
-
-### Battery Monitoring
-Configured for split battery level reporting to support peripheral battery monitoring apps.
+- **Q + W:** ESC  
+- **N + M:** Dictation (Alt+Space)  
+- **U + Y:** ñ  
+- **[ + Z** (left half only): soft reset  
+- **Mac Lock / Win Lock** on MOD layer  
 
 ## Changing the Keyboard Name
 
-To change the Bluetooth device name:
+1. Set `CONFIG_ZMK_KEYBOARD_NAME` in `config/totem.conf`  
+2. Build, then **settings-reset both halves** before flashing new firmware  
+3. Clear host bonds with `&bt BT_CLR_ALL` if needed  
 
-1. Edit `config/totem.conf` and set:
-   ```
-   CONFIG_ZMK_KEYBOARD_NAME="Your Custom Name"
-   ```
-
-2. Build the firmware (GitHub Actions will create 3 files including `settings_reset`)
-
-3. Flash the firmware — **reset both halves before flashing either**
-   (see [Flashing & Re-pairing the Split Halves](#flashing--re-pairing-the-split-halves)):
-   - `settings_reset-xiao_ble_nrf52840_zmk.uf2` → **both** halves first
-   - `totem_left-xiao_ble_nrf52840_zmk.uf2` → left half
-   - `totem_right-xiao_ble_nrf52840_zmk.uf2` → right half
-
-4. Clear the host Bluetooth bond with `&bt BT_CLR_ALL`
-
-Note: The settings reset is required because the keyboard name is stored in persistent memory.
+The name is stored in settings; reset is required for a clean rename.

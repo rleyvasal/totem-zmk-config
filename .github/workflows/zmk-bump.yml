@@ -9,8 +9,9 @@ name: Bump ZMK
 # Setup (one-time):
 #   - Secret ZMK_FORK_TOKEN: fine-grained PAT with Contents:write on rleyvasal/zmk
 #     (GITHUB_TOKEN cannot push to another repo).
-#   - config/west.yml zmk project tracks a branch this workflow manages
-#     (zmk-optimized-<short-sha>).
+#   - config/west.yml pins a *commit SHA* of the fork tip (reproducible). The
+#     workflow still pushes branch zmk-optimized-<short-sha> for humans, then
+#     writes that tip's full SHA into west.yml on the bump PR.
 
 on:
   schedule:
@@ -139,6 +140,7 @@ jobs:
           CURRENT=$(awk '/name: zmk/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml || true)
           echo "west.yml currently tracks: ${CURRENT:-<none>}"
 
+          # west.yml may pin a branch name (legacy) or a full fork tip SHA.
           if [ "$CURRENT" = "$FORKBRANCH" ]; then
             echo "Already on ${FORKBRANCH}. Nothing to bump."
             echo "status=noop" >> "$GITHUB_OUTPUT"
@@ -146,28 +148,60 @@ jobs:
             exit 0
           fi
 
+          # If west pins a fork tip whose single parent is the target upstream SHA,
+          # we already have this base + patch applied.
+          if FORK_META=$(gh api "repos/${FORK_REPO}/commits/${CURRENT}" 2>/dev/null); then
+            FORK_TIP=$(echo "$FORK_META" | jq -r .sha)
+            PARENT=$(echo "$FORK_META" | jq -r '.parents[0].sha // empty')
+            if [ "$PARENT" = "$SHA" ]; then
+              echo "west.yml tip ${FORK_TIP:0:7} is already based on target ${SHORT}. Nothing to bump."
+              echo "status=noop" >> "$GITHUB_OUTPUT"
+              echo "reason=already-on-target-base" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # Also: tip of the desired fork branch already matches west pin.
+            if EXISTING_TIP=$(gh api "repos/${FORK_REPO}/commits/${FORKBRANCH}" --jq .sha 2>/dev/null); then
+              if [ "$CURRENT" = "$EXISTING_TIP" ] || [ "$FORK_TIP" = "$EXISTING_TIP" ]; then
+                EXISTING_PARENT=$(gh api "repos/${FORK_REPO}/commits/${EXISTING_TIP}" --jq '.parents[0].sha // empty')
+                if [ "$EXISTING_PARENT" = "$SHA" ]; then
+                  echo "Fork branch ${FORKBRANCH} tip already matches west pin for base ${SHORT}."
+                  echo "status=noop" >> "$GITHUB_OUTPUT"
+                  echo "reason=fork-branch-current" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              fi
+            fi
+          fi
+
           # Release mode: never open a PR that would move us *backward* from a
-          # post-release main pin (e.g. zmk-optimized-484a054 past v0.3.0).
-          if [ "$MODE" = "release" ] && [[ "$CURRENT" == zmk-optimized-* ]]; then
-            CURRENT_SHORT="${CURRENT#zmk-optimized-}"
-            if CURRENT_SHA=$(gh api "repos/${UPSTREAM_REPO}/commits/${CURRENT_SHORT}" --jq .sha 2>/dev/null); then
-              if [ "$CURRENT_SHA" = "$SHA" ]; then
-                echo "Current base is the release commit. Nothing to bump."
-                echo "status=noop" >> "$GITHUB_OUTPUT"
-                echo "reason=already-on-release-commit" >> "$GITHUB_OUTPUT"
-                exit 0
+          # post-release pin (SHA tip or zmk-optimized-<base> branch name).
+          if [ "$MODE" = "release" ]; then
+            BASE_FOR_COMPARE=""
+            if [[ "$CURRENT" == zmk-optimized-* ]]; then
+              BASE_FOR_COMPARE="${CURRENT#zmk-optimized-}"
+            elif FORK_META=$(gh api "repos/${FORK_REPO}/commits/${CURRENT}" 2>/dev/null); then
+              # Fork tip's parent is our upstream base for single-commit optimized tips.
+              BASE_FOR_COMPARE=$(echo "$FORK_META" | jq -r '.parents[0].sha // empty')
+            fi
+            if [ -n "$BASE_FOR_COMPARE" ]; then
+              if CURRENT_BASE=$(gh api "repos/${UPSTREAM_REPO}/commits/${BASE_FOR_COMPARE}" --jq .sha 2>/dev/null); then
+                if [ "$CURRENT_BASE" = "$SHA" ]; then
+                  echo "Current base is the release commit. Nothing to bump."
+                  echo "status=noop" >> "$GITHUB_OUTPUT"
+                  echo "reason=already-on-release-commit" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                behind=$(gh api "repos/${UPSTREAM_REPO}/compare/${SHA}...${CURRENT_BASE}" --jq .behind_by)
+                if [ "$behind" = "0" ]; then
+                  echo "Current base already contains release ${LABEL} (${SHORT}). Skipping (no downgrade)."
+                  echo "status=noop" >> "$GITHUB_OUTPUT"
+                  echo "reason=already-past-release" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                echo "Current base is behind release by ${behind} commit(s); will bump."
+              else
+                echo "Could not resolve base ${BASE_FOR_COMPARE} on upstream; proceeding with bump attempt."
               fi
-              # compare base...head : behind_by == 0 means head contains base.
-              behind=$(gh api "repos/${UPSTREAM_REPO}/compare/${SHA}...${CURRENT_SHA}" --jq .behind_by)
-              if [ "$behind" = "0" ]; then
-                echo "Current base ${CURRENT_SHORT} already contains release ${LABEL} (${SHORT}). Skipping (no downgrade)."
-                echo "status=noop" >> "$GITHUB_OUTPUT"
-                echo "reason=already-past-release" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              echo "Current base is behind release by ${behind} commit(s); will bump."
-            else
-              echo "Could not resolve current short sha ${CURRENT_SHORT} on upstream; proceeding with bump attempt."
             fi
           fi
 
@@ -220,9 +254,10 @@ jobs:
             exit 0
           fi
 
-          # Applies cleanly is not enough — ensure throttle / go-dark hooks exist.
+          # Applies cleanly is not enough — ensure throttle / go-dark / boost hooks exist.
           missing=0
-          for sym in adv_throttled idle_go_dark idle_disconnect_work CONFIG_TOTEM_IDLE_DISCONNECT; do
+          for sym in adv_throttled idle_go_dark idle_disconnect_work totem_adv_boost_active \
+            CONFIG_TOTEM_IDLE_DISCONNECT CONFIG_TOTEM_ADV_BOOST; do
             if ! git -C zmk grep -q "$sym" -- app/src/ble.c; then
               echo "::error::Post-apply sanity check failed: '${sym}' not found in app/src/ble.c"
               missing=1
@@ -234,10 +269,12 @@ jobs:
             exit 0
           fi
 
-          git -C zmk commit -m "ZMK optimized (throttle + idle-disconnect) on ZMK ${SHORT} (${LABEL})"
+          git -C zmk commit -m "ZMK optimized (throttle + idle-disconnect + boost) on ${SHORT} (${LABEL})"
           git -C zmk push -f "https://x-access-token:${FORK_TOKEN}@github.com/${FORK_REPO}.git" "$FORKBRANCH"
+          FORK_TIP=$(git -C zmk rev-parse HEAD)
           echo "status=clean" >> "$GITHUB_OUTPUT"
-          echo "Pushed ${FORK_REPO}@${FORKBRANCH}"
+          echo "fork_tip=$FORK_TIP" >> "$GITHUB_OUTPUT"
+          echo "Pushed ${FORK_REPO}@${FORKBRANCH} tip ${FORK_TIP}"
 
       - name: Open bump PR (clean)
         if: steps.plan.outputs.status == 'needed' && steps.apply.outputs.status == 'clean'
@@ -247,6 +284,7 @@ jobs:
           set -euo pipefail
           SHORT="${{ steps.ref.outputs.short }}"
           FORKBRANCH="${{ steps.ref.outputs.forkbranch }}"
+          FORK_TIP="${{ steps.apply.outputs.fork_tip }}"
           LABEL="${{ steps.ref.outputs.label }}"
           MODE="${{ steps.ref.outputs.mode }}"
           SHA="${{ steps.ref.outputs.sha }}"
@@ -264,8 +302,11 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git checkout -B "$BR"
 
-          # Retarget only the zmk project's revision line (not defaults.revision).
-          sed -i '/name: zmk/,/revision:/ s|revision: .*|revision: '"$FORKBRANCH"'|' config/west.yml
+          # Pin full fork tip SHA (reproducible). Branch zmk-optimized-* still
+          # exists on the fork for humans; west always tracks the immutable tip.
+          sed -i '/name: zmk/,/revision:/ s|revision: .*|revision: '"$FORK_TIP"'|' config/west.yml
+          # Refresh the human-facing branch hint in comments (best-effort).
+          sed -i 's|zmk-optimized-[0-9a-fA-F]*|'"$FORKBRANCH"'|g' config/west.yml || true
           if git diff --quiet -- config/west.yml; then
             echo "west.yml unchanged; nothing to bump."
             exit 0
@@ -273,10 +314,10 @@ jobs:
 
           if [ -n "$RELEASE_TAG" ]; then
             TITLE="Bump ZMK to ${RELEASE_TAG} (${SHORT})"
-            git commit -am "Bump ZMK to ${RELEASE_TAG} (${SHORT})"
+            git commit -am "Bump ZMK to ${RELEASE_TAG} (${FORK_TIP:0:7})"
           else
             TITLE="Bump ZMK to ${SHORT} (${LABEL})"
-            git commit -am "Bump ZMK to ${SHORT} (${LABEL})"
+            git commit -am "Bump ZMK to ${SHORT} (${FORK_TIP:0:7})"
           fi
           git push -f origin "$BR"
 
@@ -284,6 +325,7 @@ jobs:
           sed \
             -e "s|__SHORT__|${SHORT}|g" \
             -e "s|__FORKBRANCH__|${FORKBRANCH}|g" \
+            -e "s|__FORK_TIP__|${FORK_TIP}|g" \
             -e "s|__LABEL__|${LABEL}|g" \
             -e "s|__MODE__|${MODE}|g" \
             -e "s|__SHA__|${SHA}|g" \
