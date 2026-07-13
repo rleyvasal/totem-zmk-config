@@ -26,6 +26,15 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
   and cancels when that host disconnects. Keypresses still reset the countdown
   while typing.
 
+**Advertising boost** (`CONFIG_TOTEM_ADV_BOOST`, requires the throttle):
+
+- For `CONFIG_TOTEM_ADV_BOOST_SEC` after a **profile switch** (or wake from dark),
+  advertise at GAP fast interval 1 (**30–60 ms**) instead of ZMK’s default fast
+  interval 2 (**100–150 ms**), then return to normal. Speeds host discovery when
+  switching computers.
+- Profile select also **raises the profile-changed event before advertising**, so
+  exclusive-host can drop the previous computer first.
+
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
 truth; the fork is just where the applied result lives. Each ZMK base gets its own

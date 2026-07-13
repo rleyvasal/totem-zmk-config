@@ -40,6 +40,24 @@ config TOTEM_ADV_THROTTLE_TIMEOUT_MIN
 	depends on TOTEM_ADV_THROTTLE
 	default 5
 
+config TOTEM_ADV_BOOST
+	bool "Faster advertising after profile switch (and wake from dark)"
+	depends on TOTEM_ADV_THROTTLE
+	default y
+	help
+	  For TOTEM_ADV_BOOST_SEC after a profile switch (or keypress resume from
+	  advertising-dark), advertise at Bluetooth GAP "fast interval 1" (30-60 ms)
+	  instead of ZMK's default "fast interval 2" (100-150 ms). Denser advertising
+	  helps the newly selected host discover the keyboard sooner. Implemented in
+	  patches/totem-ble.patch. Central-only. Small extra radio use only during the
+	  short boost window.
+
+config TOTEM_ADV_BOOST_SEC
+	int "Seconds of dense advertising after profile switch"
+	depends on TOTEM_ADV_BOOST
+	default 12
+	range 3 60
+
 config TOTEM_IDLE_DISCONNECT
 	bool "Disconnect the active host after a long keypress-idle window (then go dark)"
 	depends on TOTEM_ADV_THROTTLE
