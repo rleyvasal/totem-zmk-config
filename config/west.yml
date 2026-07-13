@@ -11,11 +11,10 @@ manifest:
       remote: fork
       # Our fork = official ZMK + patches/totem-ble.patch (advertising throttle +
       # idle-disconnect/go-dark). Each ZMK base gets its own branch
-      # `totem-optimized-<zmk-sha>`; this
-      # revision tracks the current one (base ZMK 484a054, 2026-06-29). Bumps are
-      # prepared by .github/workflows/zmk-bump.yml, which opens a PR with test
-      # artifacts -- see patches/README.md. Pin to a fork SHA here instead of the
-      # branch for fully reproducible builds.
+      # `totem-optimized-<zmk-sha>`; this revision tracks the current one
+      # (base ZMK 484a054 on main, post-v0.3.0). Bumps: .github/workflows/zmk-bump.yml
+      # (weekly stable-release poll + manual dispatch for main/ref). Opens a PR with
+      # flashable artifacts -- see patches/README.md. Never auto-merges.
       revision: totem-optimized-484a054
       import: app/west.yml
   self:

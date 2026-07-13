@@ -1,33 +1,49 @@
 name: Bump ZMK
 
-# Twice a year (and on demand), try our patch on the newest ZMK and, if it still
-# applies, open a PR whose CI build produces flashable artifacts to test BEFORE it
-# goes live. Never force-updates the branch config/west.yml tracks -- you approve by
-# merging the PR. If the patch no longer applies, it opens an issue instead.
+# Policy (option A):
+#   - Scheduled runs target the latest *stable* zmkfirmware/zmk release only.
+#   - workflow_dispatch can target release (default), main HEAD, or an explicit ref.
+#   - Never auto-merges: opens a config PR; you flash the CI artifact and merge.
+#   - If the patch no longer applies (or post-apply sanity checks fail), opens an issue.
 #
-# Setup required (one-time):
-#   - Secret ZMK_FORK_TOKEN: a fine-grained PAT with Contents:write on rleyvasal/zmk
-#     (needed to push the prepared bump branch to the fork; GITHUB_TOKEN can't reach
-#     another repo).
-#   - config/west.yml's zmk project must track a branch this workflow manages
-#     (e.g. totem-optimized-*). Adjust FORK_REPO / names below to taste.
+# Setup (one-time):
+#   - Secret ZMK_FORK_TOKEN: fine-grained PAT with Contents:write on rleyvasal/zmk
+#     (GITHUB_TOKEN cannot push to another repo).
+#   - config/west.yml zmk project tracks a branch this workflow manages
+#     (totem-optimized-<short-sha>).
 
 on:
   schedule:
-    - cron: '0 6 1 1,7 *'   # 06:00 UTC, Jan 1 and Jul 1
+    # Poll for new stable releases (Actions cannot subscribe to another repo's releases).
+    - cron: '0 6 * * 1'   # 06:00 UTC every Monday
   workflow_dispatch:
     inputs:
+      mode:
+        description: "What to bump to"
+        type: choice
+        required: true
+        default: release
+        options:
+          - release   # latest stable GitHub release (same as schedule)
+          - main      # zmkfirmware/zmk main HEAD (manual / bleeding-edge only)
+          - ref       # explicit tag, branch, or full SHA below
       ref:
-        description: "ZMK ref to bump to (blank = zmkfirmware/zmk main HEAD)"
+        description: "ZMK ref when mode=ref (tag, branch, or SHA). Ignored otherwise."
         required: false
+        default: ""
 
 permissions:
-  contents: write        # push the config bump branch + open the PR
+  contents: write
   pull-requests: write
   issues: write
 
+concurrency:
+  group: zmk-bump
+  cancel-in-progress: false
+
 env:
   UPSTREAM: https://github.com/zmkfirmware/zmk.git
+  UPSTREAM_REPO: zmkfirmware/zmk
   FORK_REPO: rleyvasal/zmk
   PATCH: patches/totem-ble.patch
 
@@ -40,84 +56,276 @@ jobs:
 
       - name: Resolve target ZMK commit
         id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          REF="${{ github.event.inputs.ref }}"
-          if [ -z "$REF" ]; then
-            REF=$(git ls-remote "$UPSTREAM" main | cut -f1)
-          fi
-          echo "sha=$REF" >> "$GITHUB_OUTPUT"
-          echo "short=${REF:0:7}" >> "$GITHUB_OUTPUT"
 
-      - name: Apply our patch onto the new ZMK
+          # schedule has no inputs; treat like mode=release
+          MODE="${{ github.event.inputs.mode || 'release' }}"
+          INPUT_REF="${{ github.event.inputs.ref || '' }}"
+          LABEL=""
+          SHA=""
+          RELEASE_TAG=""
+          RELEASE_URL=""
+
+          resolve_ref_to_sha() {
+            local r="$1"
+            # Works for full/short SHAs, branch names, and tags.
+            gh api "repos/${UPSTREAM_REPO}/commits/${r}" --jq .sha
+          }
+
+          case "$MODE" in
+            release)
+              meta=$(gh api "repos/${UPSTREAM_REPO}/releases/latest")
+              RELEASE_TAG=$(echo "$meta" | jq -r .tag_name)
+              RELEASE_URL=$(echo "$meta" | jq -r .html_url)
+              if [ -z "$RELEASE_TAG" ] || [ "$RELEASE_TAG" = "null" ]; then
+                echo "::error::Could not resolve latest stable release from ${UPSTREAM_REPO}"
+                exit 1
+              fi
+              SHA=$(resolve_ref_to_sha "$RELEASE_TAG")
+              LABEL="$RELEASE_TAG"
+              echo "Resolved latest stable release ${RELEASE_TAG} → ${SHA}"
+              ;;
+            main)
+              SHA=$(resolve_ref_to_sha main)
+              LABEL="main"
+              echo "Resolved main → ${SHA}"
+              ;;
+            ref)
+              if [ -z "$INPUT_REF" ]; then
+                echo "::error::mode=ref requires the ref input (tag, branch, or SHA)"
+                exit 1
+              fi
+              if ! SHA=$(resolve_ref_to_sha "$INPUT_REF"); then
+                echo "::error::Could not resolve ref '${INPUT_REF}' on ${UPSTREAM_REPO}"
+                exit 1
+              fi
+              LABEL="$INPUT_REF"
+              echo "Resolved ref ${INPUT_REF} → ${SHA}"
+              ;;
+            *)
+              echo "::error::Unknown mode '${MODE}'"
+              exit 1
+              ;;
+          esac
+
+          SHORT="${SHA:0:7}"
+          FORKBRANCH="totem-optimized-${SHORT}"
+
+          {
+            echo "mode=$MODE"
+            echo "sha=$SHA"
+            echo "short=$SHORT"
+            echo "label=$LABEL"
+            echo "forkbranch=$FORKBRANCH"
+            echo "release_tag=$RELEASE_TAG"
+            echo "release_url=$RELEASE_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether a bump is needed
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          MODE="${{ steps.ref.outputs.mode }}"
+          SHA="${{ steps.ref.outputs.sha }}"
+          SHORT="${{ steps.ref.outputs.short }}"
+          FORKBRANCH="${{ steps.ref.outputs.forkbranch }}"
+          LABEL="${{ steps.ref.outputs.label }}"
+
+          CURRENT=$(awk '/name: zmk/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml || true)
+          echo "west.yml currently tracks: ${CURRENT:-<none>}"
+
+          if [ "$CURRENT" = "$FORKBRANCH" ]; then
+            echo "Already on ${FORKBRANCH}. Nothing to bump."
+            echo "status=noop" >> "$GITHUB_OUTPUT"
+            echo "reason=already-on-target-branch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Release mode: never open a PR that would move us *backward* from a
+          # post-release main pin (e.g. totem-optimized-484a054 past v0.3.0).
+          if [ "$MODE" = "release" ] && [[ "$CURRENT" == totem-optimized-* ]]; then
+            CURRENT_SHORT="${CURRENT#totem-optimized-}"
+            if CURRENT_SHA=$(gh api "repos/${UPSTREAM_REPO}/commits/${CURRENT_SHORT}" --jq .sha 2>/dev/null); then
+              if [ "$CURRENT_SHA" = "$SHA" ]; then
+                echo "Current base is the release commit. Nothing to bump."
+                echo "status=noop" >> "$GITHUB_OUTPUT"
+                echo "reason=already-on-release-commit" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              # compare base...head : behind_by == 0 means head contains base.
+              behind=$(gh api "repos/${UPSTREAM_REPO}/compare/${SHA}...${CURRENT_SHA}" --jq .behind_by)
+              if [ "$behind" = "0" ]; then
+                echo "Current base ${CURRENT_SHORT} already contains release ${LABEL} (${SHORT}). Skipping (no downgrade)."
+                echo "status=noop" >> "$GITHUB_OUTPUT"
+                echo "reason=already-past-release" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "Current base is behind release by ${behind} commit(s); will bump."
+            else
+              echo "Could not resolve current short sha ${CURRENT_SHORT} on upstream; proceeding with bump attempt."
+            fi
+          fi
+
+          BR="zmk-bump-${SHORT}"
+          EXISTING_PR=$(gh pr list --head "$BR" --state open --json url --jq '.[0].url // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Open PR already exists for ${BR}: ${EXISTING_PR}"
+            echo "status=noop" >> "$GITHUB_OUTPUT"
+            echo "reason=pr-already-open" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          {
+            echo "status=needed"
+            echo "reason=bump"
+            echo "config_branch=$BR"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require ZMK_FORK_TOKEN
+        if: steps.plan.outputs.status == 'needed'
+        env:
+          FORK_TOKEN: ${{ secrets.ZMK_FORK_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FORK_TOKEN:-}" ]; then
+            echo "::error::Secret ZMK_FORK_TOKEN is not set. Add a fine-grained PAT with Contents:write on ${FORK_REPO}."
+            exit 1
+          fi
+
+      - name: Apply patch, sanity-check, push fork branch
         id: apply
+        if: steps.plan.outputs.status == 'needed'
         env:
           FORK_TOKEN: ${{ secrets.ZMK_FORK_TOKEN }}
         run: |
           set -euo pipefail
           SHA="${{ steps.ref.outputs.sha }}"
-          FORKBRANCH="totem-optimized-${{ steps.ref.outputs.short }}"
-          echo "forkbranch=$FORKBRANCH" >> "$GITHUB_OUTPUT"
-
-          # If west.yml already tracks this branch, ZMK main hasn't moved past the
-          # pinned base -> nothing to bump. Exit cleanly without touching the fork.
-          CURRENT=$(awk '/revision:.*totem-optimized/{print $2; exit}' config/west.yml || true)
-          if [ "$CURRENT" = "$FORKBRANCH" ]; then
-            echo "Already on $FORKBRANCH; ZMK main is unchanged. Nothing to bump."
-            echo "status=noop" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          SHORT="${{ steps.ref.outputs.short }}"
+          FORKBRANCH="${{ steps.ref.outputs.forkbranch }}"
+          LABEL="${{ steps.ref.outputs.label }}"
 
           git clone "$UPSTREAM" zmk
           git -C zmk checkout -B "$FORKBRANCH" "$SHA"
           git -C zmk config user.name  "zmk-bump-bot"
           git -C zmk config user.email "actions@users.noreply.github.com"
 
-          if git -C zmk apply --index "../$PATCH"; then
-            git -C zmk commit -m "Totem optimized (throttle + idle-disconnect) on ZMK ${{ steps.ref.outputs.short }}"
-            git -C zmk push -f "https://x-access-token:${FORK_TOKEN}@github.com/${FORK_REPO}.git" "$FORKBRANCH"
-            echo "status=clean" >> "$GITHUB_OUTPUT"
-          else
+          if ! git -C zmk apply --index "../$PATCH"; then
             echo "status=conflict" >> "$GITHUB_OUTPUT"
+            echo "Patch failed to apply onto ${LABEL} (${SHORT})."
+            exit 0
           fi
 
+          # Applies cleanly is not enough — ensure throttle / go-dark hooks exist.
+          missing=0
+          for sym in adv_throttled idle_go_dark idle_disconnect_work CONFIG_TOTEM_IDLE_DISCONNECT; do
+            if ! git -C zmk grep -q "$sym" -- app/src/ble.c; then
+              echo "::error::Post-apply sanity check failed: '${sym}' not found in app/src/ble.c"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            echo "Patch applied but sanity markers missing (upstream structure changed?)."
+            exit 0
+          fi
+
+          git -C zmk commit -m "Totem optimized (throttle + idle-disconnect) on ZMK ${SHORT} (${LABEL})"
+          git -C zmk push -f "https://x-access-token:${FORK_TOKEN}@github.com/${FORK_REPO}.git" "$FORKBRANCH"
+          echo "status=clean" >> "$GITHUB_OUTPUT"
+          echo "Pushed ${FORK_REPO}@${FORKBRANCH}"
+
       - name: Open bump PR (clean)
-        if: steps.apply.outputs.status == 'clean'
+        if: steps.plan.outputs.status == 'needed' && steps.apply.outputs.status == 'clean'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           SHORT="${{ steps.ref.outputs.short }}"
-          FORKBRANCH="${{ steps.apply.outputs.forkbranch }}"
-          BR="zmk-bump-$SHORT"
+          FORKBRANCH="${{ steps.ref.outputs.forkbranch }}"
+          LABEL="${{ steps.ref.outputs.label }}"
+          MODE="${{ steps.ref.outputs.mode }}"
+          SHA="${{ steps.ref.outputs.sha }}"
+          RELEASE_TAG="${{ steps.ref.outputs.release_tag }}"
+          RELEASE_URL="${{ steps.ref.outputs.release_url }}"
+          BR="${{ steps.plan.outputs.config_branch }}"
+
+          EXISTING_PR=$(gh pr list --head "$BR" --state open --json url --jq '.[0].url // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already open: ${EXISTING_PR}"
+            exit 0
+          fi
 
           git config user.name  "zmk-bump-bot"
           git config user.email "actions@users.noreply.github.com"
           git checkout -B "$BR"
-          # Retarget only the zmk project's revision (range from its name to the next
-          # revision: line), leaving defaults.revision untouched.
+
+          # Retarget only the zmk project's revision line (not defaults.revision).
           sed -i '/name: zmk/,/revision:/ s|revision: .*|revision: '"$FORKBRANCH"'|' config/west.yml
           if git diff --quiet -- config/west.yml; then
             echo "west.yml unchanged; nothing to bump."
             exit 0
           fi
-          git commit -am "Bump ZMK to $SHORT"
+
+          if [ -n "$RELEASE_TAG" ]; then
+            TITLE="Bump ZMK to ${RELEASE_TAG} (${SHORT})"
+            git commit -am "Bump ZMK to ${RELEASE_TAG} (${SHORT})"
+          else
+            TITLE="Bump ZMK to ${SHORT} (${LABEL})"
+            git commit -am "Bump ZMK to ${SHORT} (${LABEL})"
+          fi
           git push -f origin "$BR"
 
-          # Fill the committed PR-body template and use it verbatim.
-          sed -e "s|__SHORT__|$SHORT|g" -e "s|__FORKBRANCH__|$FORKBRANCH|g" \
+          # Empty release fields stay empty; template handles optional section.
+          sed \
+            -e "s|__SHORT__|${SHORT}|g" \
+            -e "s|__FORKBRANCH__|${FORKBRANCH}|g" \
+            -e "s|__LABEL__|${LABEL}|g" \
+            -e "s|__MODE__|${MODE}|g" \
+            -e "s|__SHA__|${SHA}|g" \
+            -e "s|__RELEASE_TAG__|${RELEASE_TAG}|g" \
+            -e "s|__RELEASE_URL__|${RELEASE_URL}|g" \
             .github/zmk-bump-pr-body.md > /tmp/pr-body.md
+
           gh pr create --base main --head "$BR" \
-            --title "Bump ZMK to $SHORT" \
+            --title "$TITLE" \
             --body-file /tmp/pr-body.md
 
       - name: Open issue (patch conflicts)
-        if: steps.apply.outputs.status == 'conflict'
+        if: steps.plan.outputs.status == 'needed' && steps.apply.outputs.status == 'conflict'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           SHORT="${{ steps.ref.outputs.short }}"
-          gh issue create \
-            --title "ZMK bump $SHORT: patch needs a manual rebase" \
-            --body "\`$PATCH\` no longer applies onto \`zmkfirmware/zmk@$SHORT\` (upstream moved the code it touches). Rebase the \`app/src/ble.c\` changes by hand, regenerate the patch, then re-run this workflow."
+          LABEL="${{ steps.ref.outputs.label }}"
+          MODE="${{ steps.ref.outputs.mode }}"
+          TITLE="ZMK bump ${SHORT}: patch needs a manual rebase"
+
+          EXISTING=$(gh issue list --state open --search "ZMK bump ${SHORT} in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "Open issue already exists: #${EXISTING}"
+            exit 0
+          fi
+
+          BODY=$(cat <<EOF
+          \`${PATCH}\` failed to apply (or post-apply sanity checks failed) onto \`zmkfirmware/zmk@${SHORT}\` (mode=${MODE}, label=${LABEL}).
+
+          Upstream likely moved code around \`app/src/ble.c\`. Rebase the Totem throttle + idle-disconnect changes by hand, regenerate the patch:
+
+          \`\`\`sh
+          git -C ~/zmk diff <base-sha> -- app/src/ble.c > patches/totem-ble.patch
+          \`\`\`
+
+          Then re-run **Bump ZMK** (\`workflow_dispatch\`, mode=\`${MODE}\`).
+          EOF
+          )
+
+          # Trim leading spaces from heredoc lines for readable issue body.
+          BODY=$(echo "$BODY" | sed 's/^          //')
+
+          gh issue create --title "$TITLE" --body "$BODY"

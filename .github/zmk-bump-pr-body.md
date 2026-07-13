@@ -1,4 +1,15 @@
-Automated ZMK bump — our patch applied cleanly onto `zmkfirmware/zmk@__SHORT__` (fork branch `__FORKBRANCH__`).
+Automated ZMK bump (policy **A**: stable releases by default; `main`/arbitrary refs only via manual dispatch).
+
+| | |
+|---|---|
+| **Mode** | `__MODE__` |
+| **Target label** | `__LABEL__` |
+| **Upstream commit** | `zmkfirmware/zmk@__SHA__` (`__SHORT__`) |
+| **Fork branch** | `__FORKBRANCH__` |
+| **Release** | __RELEASE_TAG__ |
+| **Release notes** | __RELEASE_URL__ |
+
+(If **Release** / **Release notes** are empty, this was a `main` or `ref` dispatch, not a stable release.)
 
 **Do not merge until you have flashed this PR's build artifact (left half) and verified all of the following on hardware:**
 

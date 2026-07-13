@@ -22,6 +22,9 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
   host reconnects. This lets an asleep host — deep *or* light sleep (plugged in /
   external monitor) — stay gone so drain drops to the throttled rate, without the
   wake storm a plain disconnect caused.
+- The idle countdown **arms when the active host connects** (not only on keypress),
+  and cancels when that host disconnects. Keypresses still reset the countdown
+  while typing.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
@@ -32,15 +35,27 @@ branch **`totem-optimized-<zmk-sha>`** (= that upstream commit + this patch), an
 
 ## Updating to a newer ZMK — automated (preferred)
 
-`.github/workflows/zmk-bump.yml` runs twice a year (and on demand). It applies this
-patch onto ZMK `main` HEAD and:
+`.github/workflows/zmk-bump.yml` implements **policy A**:
 
-- **applies cleanly** → pushes `totem-optimized-<new-sha>` to the fork and opens a
-  **config PR** that repoints `config/west.yml` at it. The PR's CI build gives you
-  flashable artifacts — flash, test cross-talk + battery, then **merge to accept**.
-  Nothing lands on the tracked branch until you merge.
-- **conflicts** (upstream moved the code the patch touches) → opens an **issue**;
-  rebase by hand (below).
+| Trigger | Target |
+|---|---|
+| **Schedule** (Monday 06:00 UTC) | Latest *stable* `zmkfirmware/zmk` GitHub release only |
+| **`workflow_dispatch` → release** | Same as schedule (default) |
+| **`workflow_dispatch` → main** | `zmkfirmware/zmk` main HEAD (manual / bleeding-edge) |
+| **`workflow_dispatch` → ref** | Explicit tag, branch, or SHA |
+
+It applies this patch and:
+
+- **already current / already past a release** → no-op (will **not** downgrade a
+  post-release main pin such as `totem-optimized-484a054` when the latest release
+  is still `v0.3.0`)
+- **applies cleanly** (+ post-apply symbol checks for go-dark/throttle) → pushes
+  `totem-optimized-<new-sha>` to the fork and opens a **config PR** that repoints
+  `config/west.yml`. CI builds flashable artifacts — flash, run the PR checklist,
+  then **merge to accept**. Nothing lands on `main` until you merge.
+- **conflicts or sanity-check failure** → opens an **issue** (deduped); rebase by
+  hand (below).
+- **open PR/issue already exists** for that short SHA → no-op
 
 Requires the `ZMK_FORK_TOKEN` secret (fine-grained PAT, Contents:write on the fork).
 

@@ -13,6 +13,10 @@
  * address before the IRK match completes -- and dropping it would kill a
  * legitimate reconnect of the active host.
  *
+ * Eviction is always deferred onto a work queue. Calling bt_conn_disconnect()
+ * from a Zephyr connected callback (or mid profile-switch event delivery) is
+ * unsafe; the stack may still be finishing setup.
+ *
  * The HCI reason used for the disconnect is configurable
  * (CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON) so it can be tuned for hosts that
  * mishandle input after a plain user-terminated disconnect.
@@ -59,15 +63,27 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
     LOG_INF("Disconnecting background host %s (profile %d, reason 0x%02x)", addr, idx,
             CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
-    bt_conn_disconnect(conn, CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
+    int err = bt_conn_disconnect(conn, CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
+    if (err) {
+        LOG_WRN("bt_conn_disconnect(%s) failed (err %d)", addr, err);
+    }
 }
 
-/* A new host connected -> drop it immediately if it's a non-active profile. */
+static void exclusive_host_evict_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+    bt_conn_foreach(BT_CONN_TYPE_LE, drop_if_non_active_host, NULL);
+}
+
+static K_WORK_DEFINE(exclusive_host_evict_work, exclusive_host_evict_work_handler);
+
+/* A new host connected -> schedule eviction of any non-active profile. Deferred
+ * so we never call bt_conn_disconnect from inside the connected callback. */
 static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
+    ARG_UNUSED(conn);
     if (err) {
         return;
     }
-    drop_if_non_active_host(conn, NULL);
+    k_work_submit(&exclusive_host_evict_work);
 }
 
 BT_CONN_CB_DEFINE(exclusive_host_cb) = {
@@ -75,9 +91,10 @@ BT_CONN_CB_DEFINE(exclusive_host_cb) = {
 };
 
 /* Profile switched -> drop any other-profile computer still connected in the
- * background so only the newly-selected one stays. */
+ * background so only the newly-selected one stays. Same deferred path as connect. */
 static int exclusive_host_profile_changed(const zmk_event_t *eh) {
-    bt_conn_foreach(BT_CONN_TYPE_LE, drop_if_non_active_host, NULL);
+    ARG_UNUSED(eh);
+    k_work_submit(&exclusive_host_evict_work);
     return ZMK_EV_EVENT_BUBBLE;
 }
 
