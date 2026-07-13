@@ -10,7 +10,7 @@ name: Bump ZMK
 #   - Secret ZMK_FORK_TOKEN: fine-grained PAT with Contents:write on rleyvasal/zmk
 #     (GITHUB_TOKEN cannot push to another repo).
 #   - config/west.yml zmk project tracks a branch this workflow manages
-#     (totem-optimized-<short-sha>).
+#     (zmk-optimized-<short-sha>).
 
 on:
   schedule:
@@ -45,7 +45,7 @@ env:
   UPSTREAM: https://github.com/zmkfirmware/zmk.git
   UPSTREAM_REPO: zmkfirmware/zmk
   FORK_REPO: rleyvasal/zmk
-  PATCH: patches/totem-ble.patch
+  PATCH: patches/zmk-ble.patch
 
 jobs:
   bump:
@@ -112,7 +112,7 @@ jobs:
           esac
 
           SHORT="${SHA:0:7}"
-          FORKBRANCH="totem-optimized-${SHORT}"
+          FORKBRANCH="zmk-optimized-${SHORT}"
 
           {
             echo "mode=$MODE"
@@ -147,9 +147,9 @@ jobs:
           fi
 
           # Release mode: never open a PR that would move us *backward* from a
-          # post-release main pin (e.g. totem-optimized-484a054 past v0.3.0).
-          if [ "$MODE" = "release" ] && [[ "$CURRENT" == totem-optimized-* ]]; then
-            CURRENT_SHORT="${CURRENT#totem-optimized-}"
+          # post-release main pin (e.g. zmk-optimized-484a054 past v0.3.0).
+          if [ "$MODE" = "release" ] && [[ "$CURRENT" == zmk-optimized-* ]]; then
+            CURRENT_SHORT="${CURRENT#zmk-optimized-}"
             if CURRENT_SHA=$(gh api "repos/${UPSTREAM_REPO}/commits/${CURRENT_SHORT}" --jq .sha 2>/dev/null); then
               if [ "$CURRENT_SHA" = "$SHA" ]; then
                 echo "Current base is the release commit. Nothing to bump."
@@ -234,7 +234,7 @@ jobs:
             exit 0
           fi
 
-          git -C zmk commit -m "Totem optimized (throttle + idle-disconnect) on ZMK ${SHORT} (${LABEL})"
+          git -C zmk commit -m "ZMK optimized (throttle + idle-disconnect) on ZMK ${SHORT} (${LABEL})"
           git -C zmk push -f "https://x-access-token:${FORK_TOKEN}@github.com/${FORK_REPO}.git" "$FORKBRANCH"
           echo "status=clean" >> "$GITHUB_OUTPUT"
           echo "Pushed ${FORK_REPO}@${FORKBRANCH}"
@@ -318,7 +318,7 @@ jobs:
           Upstream likely moved code around \`app/src/ble.c\`. Rebase the Totem throttle + idle-disconnect changes by hand, regenerate the patch:
 
           \`\`\`sh
-          git -C ~/zmk diff <base-sha> -- app/src/ble.c > patches/totem-ble.patch
+          git -C ~/zmk diff <base-sha> -- app/src/ble.c > patches/zmk-ble.patch
           \`\`\`
 
           Then re-run **Bump ZMK** (\`workflow_dispatch\`, mode=\`${MODE}\`).

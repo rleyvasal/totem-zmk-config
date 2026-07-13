@@ -1,5 +1,5 @@
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b..0c4ce31 100644
+index 51b172b..074a752 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -37,6 +37,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -18,7 +18,7 @@ index 51b172b..0c4ce31 100644
                      BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL)
  
 +/* Totem advertising boost: denser open-adv while armed (see TOTEM_ADV_BOOST). */
-+#if IS_ENABLED(CONFIG_TOTEM_ADV_THROTTLE) && IS_ENABLED(CONFIG_TOTEM_ADV_BOOST) &&                   \
++#if IS_ENABLED(CONFIG_TOTEM_ADV_THROTTLE) && IS_ENABLED(CONFIG_TOTEM_ADV_BOOST) &&                 \
 +    IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 +static bool totem_adv_boost_active = false;
 +#else

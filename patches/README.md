@@ -1,6 +1,6 @@
 # ZMK patch — advertising throttle + idle-disconnect
 
-`totem-ble.patch` is a small change to ZMK's `app/src/ble.c`, central-half only,
+`zmk-ble.patch` is a small change to ZMK's `app/src/ble.c`, central-half only,
 gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 
 **Advertising throttle** (`CONFIG_TOTEM_ADV_THROTTLE`):
@@ -38,9 +38,9 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
 truth; the fork is just where the applied result lives. Each ZMK base gets its own
-branch **`totem-optimized-<zmk-sha>`** (= that upstream commit + this patch), and
+branch **`zmk-optimized-<zmk-sha>`** (= that upstream commit + this patch), and
 `config/west.yml`'s `revision:` tracks the current one. The current branch is
-`totem-optimized-484a054`.
+`zmk-optimized-484a054`.
 
 ## Updating to a newer ZMK — automated (preferred)
 
@@ -56,10 +56,10 @@ branch **`totem-optimized-<zmk-sha>`** (= that upstream commit + this patch), an
 It applies this patch and:
 
 - **already current / already past a release** → no-op (will **not** downgrade a
-  post-release main pin such as `totem-optimized-484a054` when the latest release
+  post-release main pin such as `zmk-optimized-484a054` when the latest release
   is still `v0.3.0`)
 - **applies cleanly** (+ post-apply symbol checks for go-dark/throttle) → pushes
-  `totem-optimized-<new-sha>` to the fork and opens a **config PR** that repoints
+  `zmk-optimized-<new-sha>` to the fork and opens a **config PR** that repoints
   `config/west.yml`. CI builds flashable artifacts — flash, run the PR checklist,
   then **merge to accept**. Nothing lands on `main` until you merge.
 - **conflicts or sanity-check failure** → opens an **issue** (deduped); rebase by
@@ -77,12 +77,12 @@ git clone https://github.com/rleyvasal/zmk.git ~/zmk        # or reuse existing
 cd ~/zmk
 git remote add upstream https://github.com/zmkfirmware/zmk.git   # skip if present
 git fetch upstream
-git checkout -B totem-optimized-<new-short-sha> <new-upstream-sha>
-git apply ~/totem-zmk-config/patches/totem-ble.patch            # fix hunks if it fails
-git commit -am "Totem optimized (throttle + idle-disconnect) on ZMK <new-short-sha>"
-git push -f origin totem-optimized-<new-short-sha>
+git checkout -B zmk-optimized-<new-short-sha> <new-upstream-sha>
+git apply ~/totem-zmk-config/patches/zmk-ble.patch            # fix hunks if it fails
+git commit -am "ZMK optimized (throttle + idle-disconnect) on ZMK <new-short-sha>"
+git push -f origin zmk-optimized-<new-short-sha>
 ```
 
 If you fixed hunks by hand, regenerate the patch:
-`git -C ~/zmk diff <new-upstream-sha> -- app/src/ble.c > patches/totem-ble.patch`.
+`git -C ~/zmk diff <new-upstream-sha> -- app/src/ble.c > patches/zmk-ble.patch`.
 Then set `config/west.yml` `revision:` to the new branch and push the config repo.

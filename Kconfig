@@ -32,7 +32,7 @@ config TOTEM_ADV_THROTTLE
 	  TOTEM_ADV_THROTTLE_TIMEOUT_MIN minutes, stop advertising to save power. A key
 	  press on either half resumes it (the first press or two may be lost). This also
 	  stops cross-talk -- nothing can connect while not advertising -- so it does not
-	  need address-based filtering. Implemented by patches/totem-ble.patch on our ZMK
+	  need address-based filtering. Implemented by patches/zmk-ble.patch on our ZMK
 	  fork. Central-only.
 
 config TOTEM_ADV_THROTTLE_TIMEOUT_MIN
@@ -49,7 +49,7 @@ config TOTEM_ADV_BOOST
 	  advertising-dark), advertise at Bluetooth GAP "fast interval 1" (30-60 ms)
 	  instead of ZMK's default "fast interval 2" (100-150 ms). Denser advertising
 	  helps the newly selected host discover the keyboard sooner. Implemented in
-	  patches/totem-ble.patch. Central-only. Small extra radio use only during the
+	  patches/zmk-ble.patch. Central-only. Small extra radio use only during the
 	  short boost window.
 
 config TOTEM_ADV_BOOST_SEC
@@ -70,7 +70,7 @@ config TOTEM_IDLE_DISCONNECT
 	  host simply stays gone, so idle drain falls to the throttled rate with no wake
 	  storm. macOS keeps its BLE link alive during sleep, so without this the keyboard
 	  stays connected-idle overnight. Requires TOTEM_ADV_THROTTLE (shares its
-	  advertising-pause machinery). Implemented in patches/totem-ble.patch on the ZMK
+	  advertising-pause machinery). Implemented in patches/zmk-ble.patch on the ZMK
 	  fork, not a standalone module. Central-only.
 
 config TOTEM_IDLE_DISCONNECT_MIN
