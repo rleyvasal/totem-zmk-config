@@ -109,7 +109,7 @@
     base_layer {
         bindings = <
                 &kp Q           &kp W           &kp F           &kp P           &kp B               &kp J           &kp L           &kp U           &kp Y           &kp SEMI
-                &hml LGUI A     &hml LALT R     &hml LSHFT S    &hml LCTRL T    &kp G               &kp M           &hmr RCTRL N    &hmr RSHFT E    &hmr RALT I     &hmr RGUI O
+                &hml LGUI A     &hml LALT R     &hml LSHFT S    &hml LCTRL T    &kp G               &kp M           &hmr LCTRL N    &hmr RSHFT E    &hmr RALT I     &hmr RGUI O
      &kp LBKT   &kp Z           &kp X           &kp C           &kp D           &kp V               &kp K           &kp H           &kp COMMA       &kp DOT         &kp FSLH        &kp RBKT
                                          &kp ESC         &lt CODE BSPC       &lt MOD TAB     &lt ADJ ENTER   &lt NAV SPACE   &kp LSHFT
         >;
@@ -119,7 +119,7 @@
     code_layer {
         bindings = <
             &kp GRAVE       &kp AT          &kp HASH        &kp SQT         &kp DQT             &kp FSLH        &kp N7          &kp N8          &kp N9          &kp STAR
-            &kp LBKT        &hml LALT RBKT  &hml LSHFT LPAR &hml LCTRL RPAR &kp UNDER           &kp MINUS       &hmr RCTRL N4   &hmr RSHFT N5   &hmr RALT N6    &kp PLUS
+            &kp LBKT        &hml LALT RBKT  &hml LSHFT LPAR &hml LCTRL RPAR &kp UNDER           &kp MINUS       &hmr LCTRL N4   &hmr RSHFT N5   &hmr RALT N6    &kp PLUS
             &kp CARET       &kp AMPS        &kp PIPE        &kp EXCL        &kp TILDE           &kp DLLR        &kp EQUAL       &kp N1          &kp N2          &kp N3          &kp DOT         &kp PRCNT
                                                             &trans          &trans              &trans          &kp COMMA       &kp N0          &kp BSLH
         >;
