@@ -4,12 +4,14 @@ config TOTEM_EXCLUSIVE_HOST
 	default n
 	help
 	  On the central half: disconnect any non-active profile's computer that is
-	  still connected in the background, and drop a non-active host the moment it
-	  connects, so only the selected computer stays connected. Generic -- no
+	  still connected in the background, and drop a non-active host shortly after
+	  it connects, so only the selected computer stays connected. Generic -- no
 	  per-host configuration; the active profile is kept, everything else is
 	  evicted. A connection whose address does not yet resolve to a stored profile
-	  is left alone (protects an active host mid-reconnect). Module in
-	  src/exclusive_host.c (no ZMK patch needed). Central-only.
+	  is left alone (protects an active host mid-reconnect), and a freshly
+	  connected host is only evicted once its encryption handshake has settled
+	  (interrupted handshakes can leave keyboard and host with mismatched bonds).
+	  Module in src/exclusive_host.c (no ZMK patch needed). Central-only.
 
 config TOTEM_EXCLUSIVE_DISCONNECT_REASON
 	hex "HCI reason code used to disconnect a background host"
