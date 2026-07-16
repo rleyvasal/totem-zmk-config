@@ -5,3 +5,11 @@ include:
     shield: totem_right
   - board: xiao_ble//zmk
     shield: settings_reset
+  # Diagnostic build: left half with USB serial logging, for reading disconnect
+  # reasons live (0x05 = key mismatch / bond rot, 0x08 = supervision timeout).
+  # Flash only while debugging -- HID routes to USB and the radio contends with
+  # BLE, so don't judge BLE behavior on this image.
+  - board: xiao_ble//zmk
+    shield: totem_left
+    snippet: zmk-usb-logging
+    artifact-name: totem_left_logging
