@@ -148,23 +148,18 @@ static void reconnect_watch_work_handler(struct k_work *work) {
         break;
 
     case RECONNECT_STEP_ZOMBIE:
-        /* Connected peripheral that does not map to the active profile index
-         * via ZMK's address table, or maps but active_profile_is_connected is
-         * still false — drop it so advertising can serve a clean reconnect. */
-        if (scan.any_host != NULL && scan.active_match == NULL) {
-            char addr[BT_ADDR_LE_STR_LEN];
-            bt_addr_le_to_str(bt_conn_get_dst(scan.any_host), addr, sizeof(addr));
-            LOG_WRN("Reconnect watch step3: dropping unmapped host %s for clean reconnect",
-                    addr);
-            (void)bt_conn_disconnect(scan.any_host, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-        } else if (scan.active_match != NULL && !zmk_ble_active_profile_is_connected()) {
+        /* Never drop unmapped (idx < 0) hosts: that is pairing-in-progress or
+         * macOS RPA before resolve. Force-dropping those caused Windows PIN
+         * flash-and-fail and macOS infinite spinner. Only soft-drop a conn that
+         * already maps to the active profile but ZMK still reports not connected. */
+        if (scan.active_match != NULL && !zmk_ble_active_profile_is_connected()) {
             char addr[BT_ADDR_LE_STR_LEN];
             bt_addr_le_to_str(bt_conn_get_dst(scan.active_match), addr, sizeof(addr));
             LOG_WRN("Reconnect watch step3: active maps %s but ZMK not connected; soft drop",
                     addr);
             (void)bt_conn_disconnect(scan.active_match, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
         } else {
-            LOG_WRN("Reconnect watch step3: no zombie conn; host must scan (still advertising)");
+            LOG_WRN("Reconnect watch step3: leave unmapped/pairing hosts alone; keep advertising");
         }
         next_step = RECONNECT_STEP_NONE;
         break;

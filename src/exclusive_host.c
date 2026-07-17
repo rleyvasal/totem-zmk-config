@@ -1,20 +1,19 @@
 /*
  * Exclusive host: keep only the active profile's computer connected.
  *
- * Known non-active profiles (e.g. Windows while Mac is selected) are dropped
- * as soon as they are identified -- without waiting for encryption to finish.
- * Waiting for L2 let the wrong host thrash for hundreds of ms per cycle,
- * hold the only free connection slot, and starve the selected machine
- * (symptoms: Win flap + Mac greyed out after a clean dual pair).
+ * Known non-active profiles (idx >= 0 && idx != active) are dropped as soon as
+ * they are identified -- without waiting for encryption. That stops Windows
+ * thrashing open ads while Mac is selected.
  *
- * Unresolved addresses (idx < 0, typical macOS RPA before identity resolve)
- * are still left alone until identity_resolved / security_changed / the
- * forced fallback, so we never kill the active host mid-RPA.
+ * CRITICAL: idx < 0 (unresolved address) is NEVER dropped, even on the force
+ * fallback. That state is:
+ *   - a brand-new pairing (profile not stored yet), or
+ *   - macOS RPA before identity resolve.
+ * Force-dropping idx < 0 after a short settle (tried at 500 ms) killed pairing:
+ * Windows showed a PIN then disconnected; macOS spun forever. Leave unknowns
+ * alone; identity_resolved / security_changed will classify them.
  *
  * Profile switch: immediate eviction of known non-active established links.
- *
- * Bond heal remains optional and off by default.
- *
  * Central-only.
  */
 
@@ -34,9 +33,9 @@ LOG_MODULE_REGISTER(exclusive_host, CONFIG_ZMK_LOG_LEVEL);
 
 #define EXCLUSIVE_HOST_RETRY_MS 150
 
-/* Force-drop still-unencrypted background links that never identified. Short:
- * known hosts are already dropped early; this only reaps stuck unknowns. */
-#define EXCLUSIVE_HOST_SETTLE_MS 500
+/* Only used to re-check RPA → profile mapping after a short delay; does not
+ * force-drop unresolved peers (see drop_if_non_active_host). */
+#define EXCLUSIVE_HOST_SETTLE_MS 2000
 
 static void log_host_conn(const char *tag, struct bt_conn *conn, uint8_t extra) {
     char addr[BT_ADDR_LE_STR_LEN];
@@ -54,8 +53,8 @@ static void log_host_conn(const char *tag, struct bt_conn *conn, uint8_t extra) 
             active, active_up, (int)sec, extra);
 }
 
-/* data = force: when true, also drop unresolved (idx<0) non-active attempts that
- * are still below L2 after the settle window (stuck ghosts). */
+/* data = force: historically bypassed the L2 wait for *known* non-active hosts.
+ * Unknown (idx < 0) is always spared. */
 static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     bool force = (bool)(uintptr_t)data;
     struct bt_conn_info info;
@@ -70,29 +69,22 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
     int active = zmk_ble_active_profile_index();
 
+    /* Unresolved / mid-pair / Mac RPA: never drop. Force must not override. */
+    if (idx < 0) {
+        return;
+    }
     if (idx == active) {
         return;
     }
 
-    if (idx < 0) {
-        /* Unresolved RPA: only the forced fallback may drop, and only once
-         * encryption never started -- protects an active Mac mid-resolve. */
-        if (!force) {
-            return;
-        }
-        if (bt_conn_get_security(conn) >= BT_SECURITY_L2) {
-            /* Encrypted but unknown: leave it; identity_resolved should map it. */
-            return;
-        }
-    }
-
-    /* Known non-active profile (idx >= 0 && idx != active): drop immediately.
-     * Do not wait for L2 -- that was the thrash window. */
+    /* Known non-active profile: drop immediately (no L2 wait). force unused for
+     * this path but kept for API compatibility with the delayed fallback. */
+    ARG_UNUSED(force);
 
     char addr[BT_ADDR_LE_STR_LEN];
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-    LOG_INF("Disconnecting background host %s (profile %d, reason 0x%02x%s)", addr, idx,
-            CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON, force ? ", force" : "");
+    LOG_INF("Disconnecting background host %s (profile %d, reason 0x%02x)", addr, idx,
+            CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
     int err = bt_conn_disconnect(conn, CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
     if (err) {
         LOG_WRN("bt_conn_disconnect(%s) failed (err %d)", addr, err);
@@ -115,6 +107,7 @@ static void exclusive_host_retry_work_handler(struct k_work *work) {
 
 static void exclusive_host_fallback_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
+    /* Re-scan only: may catch a host whose address just became matchable. */
     exclusive_host_evict_all(true);
 }
 
@@ -224,8 +217,8 @@ static int exclusive_host_profile_changed(const zmk_event_t *eh) {
 #if IS_ENABLED(CONFIG_TOTEM_BOND_HEAL)
     active_auth_fail_streak = 0;
 #endif
-    LOG_INF("profile_changed -> active=%d connected=%d", zmk_ble_active_profile_index(),
-            zmk_ble_active_profile_is_connected());
+    LOG_INF("profile_changed -> active=%d connected=%d open=%d", zmk_ble_active_profile_index(),
+            zmk_ble_active_profile_is_connected(), zmk_ble_active_profile_is_open());
     exclusive_host_evict_all(false);
     exclusive_host_schedule_retry();
     return ZMK_EV_EVENT_BUBBLE;
