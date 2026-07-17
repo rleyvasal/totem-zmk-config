@@ -25,6 +25,46 @@ config TOTEM_EXCLUSIVE_DISCONNECT_REASON
 	  plain user-terminated disconnect; a different reason may make the host
 	  reconnect cleanly.
 
+config TOTEM_BOND_HEAL
+	bool "Auto-clear active profile bond after repeated auth failures"
+	depends on TOTEM_EXCLUSIVE_HOST
+	default y
+	help
+	  When the active host fails encryption/auth repeatedly (HCI 0x05 or
+	  security_changed errors), clear that profile's bond on the keyboard so we
+	  do not stay in the macOS "Connected + battery but no typing" zombie state.
+	  The host still needs Forget + re-pair once. Implemented in
+	  src/exclusive_host.c. Central-only.
+
+config TOTEM_BOND_HEAL_THRESHOLD
+	int "Consecutive active-profile auth failures before bond clear"
+	depends on TOTEM_BOND_HEAL
+	default 3
+	range 2 10
+
+config TOTEM_RESELECT_RECONNECT
+	bool "Re-selecting the active profile forces a soft reconnect"
+	depends on TOTEM_ADV_THROTTLE
+	default y
+	help
+	  Pressing BT_SEL for the profile that is already active disconnects that
+	  host (if connected) and re-advertises with the boost window. Soft recovery
+	  for half-dead links (especially macOS Connected-but-mute) without a full
+	  Forget + re-pair. Implemented in patches/zmk-ble.patch. Central-only.
+
+config TOTEM_EVICT_ADV_COOLDOWN_MS
+	int "Delay re-advertising after a non-active host disconnects (ms)"
+	depends on TOTEM_ADV_THROTTLE
+	default 1500
+	range 0 5000
+	help
+	  When a background (non-active) host disconnects and the active profile is
+	  still not connected, wait this many milliseconds before restarting open
+	  advertising. Breaks the exclusive-host eviction thrash loop (other host
+	  reconnects immediately and starves the selected host). 0 disables the
+	  delay. Profile switch and active-host disconnect still re-advertise
+	  immediately. Implemented in patches/zmk-ble.patch. Central-only.
+
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"
 	depends on ZMK_BLE

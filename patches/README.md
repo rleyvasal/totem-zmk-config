@@ -35,6 +35,20 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 - Profile select also **raises the profile-changed event before advertising**, so
   exclusive-host can drop the previous computer first.
 
+**Reselect soft-reconnect** (`CONFIG_TOTEM_RESELECT_RECONNECT`, requires the throttle):
+
+- Pressing `&bt BT_SEL n` when profile `n` is **already active** disconnects that
+  host (if connected) and re-advertises with the boost window. Soft recovery for
+  half-dead links (macOS “Connected but mute”) without Forget + re-pair when the
+  bond itself is still good.
+
+**Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
+
+- After a **non-active** host disconnects while the selected host is still away,
+  delay open advertising by this many ms. Breaks the exclusive-host thrash loop
+  (wrong host reconnects immediately and starves the selected one). Profile
+  switch and active-host disconnect re-advertise immediately.
+
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
 truth; the fork is just where the applied result lives. Each ZMK base gets its own

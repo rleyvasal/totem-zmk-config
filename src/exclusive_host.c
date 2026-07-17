@@ -33,7 +33,17 @@
  * own security_changed / the fallback.
  *
  * bt_conn_disconnect() never runs inside a Zephyr stack callback -- the
- * connected / security_changed paths defer through the system work queue.
+ * connected / security_changed / disconnected paths that need to act defer
+ * through the system work queue (except the profile-changed path, which is
+ * already outside the stack's critical connect path and needs immediate
+ * eviction for switch latency).
+ *
+ * Bond heal (CONFIG_TOTEM_BOND_HEAL): track authentication failures (HCI 0x05 /
+ * security_changed errors) on the *active* profile. After N failures in a row,
+ * clear that profile's bond on the keyboard so we stop sitting in the macOS
+ * "Connected + battery but no keystrokes" zombie state. The host still needs
+ * Forget + re-pair once -- but the keyboard side self-heals instead of
+ * flapping forever with a rotten key.
  *
  * The HCI reason used for the disconnect is configurable
  * (CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON) so it can be tuned for hosts that
@@ -134,6 +144,46 @@ static void exclusive_host_schedule_retry(void) {
     k_work_schedule(&exclusive_host_retry_work, K_MSEC(EXCLUSIVE_HOST_RETRY_MS));
 }
 
+#if IS_ENABLED(CONFIG_TOTEM_BOND_HEAL)
+/*
+ * Consecutive auth failures on the *active* profile. Reset on a clean security
+ * level promotion for that profile. Threshold via Kconfig.
+ */
+static uint8_t active_auth_fail_streak;
+
+static void bond_heal_clear_active_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+    LOG_ERR("Bond heal: clearing active profile %d after repeated auth failures "
+            "(host must Forget + re-pair)",
+            zmk_ble_active_profile_index());
+    active_auth_fail_streak = 0;
+    /* Clears keyboard-side bond for the active profile and restarts advertising
+     * as an open pairable profile. Host still needs Forget if it holds the
+     * mismatched key -- otherwise it will fail again immediately. */
+    zmk_ble_clear_bonds();
+}
+
+static K_WORK_DEFINE(bond_heal_clear_active_work, bond_heal_clear_active_work_handler);
+
+static void bond_heal_note_auth_failure(const char *why) {
+    if (++active_auth_fail_streak < CONFIG_TOTEM_BOND_HEAL_THRESHOLD) {
+        LOG_WRN("Bond heal: active profile auth failure %u/%u (%s)", active_auth_fail_streak,
+                CONFIG_TOTEM_BOND_HEAL_THRESHOLD, why);
+        return;
+    }
+    LOG_ERR("Bond heal: threshold reached (%s) -- scheduling bond clear", why);
+    k_work_submit(&bond_heal_clear_active_work);
+}
+
+static void bond_heal_note_auth_ok(void) {
+    if (active_auth_fail_streak != 0) {
+        LOG_INF("Bond heal: active profile security OK; clearing fail streak (%u)",
+                active_auth_fail_streak);
+        active_auth_fail_streak = 0;
+    }
+}
+#endif /* CONFIG_TOTEM_BOND_HEAL */
+
 /* A new host connected -> no eviction yet: it may be mid-handshake (see header).
  * Arm the forced fallback so a link that never encrypts still gets reaped.
  * reschedule (not schedule): a connect near the window's edge must get a full
@@ -151,15 +201,42 @@ static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
  * Deferred via work queue; the retry covers late RPA resolution. */
 static void exclusive_host_security_changed(struct bt_conn *conn, bt_security_t level,
                                             enum bt_security_err err) {
+#if IS_ENABLED(CONFIG_TOTEM_BOND_HEAL)
+    /* Only the active profile's security outcome feeds the heal streak --
+     * background hosts are expected to encrypt then get dropped. */
+    if (zmk_ble_profile_index(bt_conn_get_dst(conn)) == zmk_ble_active_profile_index()) {
+        if (err) {
+            bond_heal_note_auth_failure("security_changed");
+        } else if (level >= BT_SECURITY_L2) {
+            bond_heal_note_auth_ok();
+        }
+    }
+#else
     ARG_UNUSED(conn);
     ARG_UNUSED(level);
     ARG_UNUSED(err);
+#endif
     k_work_submit(&exclusive_host_evict_work);
     exclusive_host_schedule_retry();
 }
 
+static void exclusive_host_disconnected(struct bt_conn *conn, uint8_t reason) {
+#if IS_ENABLED(CONFIG_TOTEM_BOND_HEAL)
+    /* 0x05 = authentication failure (key mismatch). Count only for the active
+     * profile so a flapping background host cannot trigger a clear. */
+    if (reason == BT_HCI_ERR_AUTH_FAIL &&
+        zmk_ble_profile_index(bt_conn_get_dst(conn)) == zmk_ble_active_profile_index()) {
+        bond_heal_note_auth_failure("disconnect 0x05");
+    }
+#else
+    ARG_UNUSED(conn);
+    ARG_UNUSED(reason);
+#endif
+}
+
 BT_CONN_CB_DEFINE(exclusive_host_cb) = {
     .connected = exclusive_host_connected,
+    .disconnected = exclusive_host_disconnected,
     .security_changed = exclusive_host_security_changed,
 };
 
@@ -167,6 +244,10 @@ BT_CONN_CB_DEFINE(exclusive_host_cb) = {
  * is not competing with a still-live background link for radio / host attention. */
 static int exclusive_host_profile_changed(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
+#if IS_ENABLED(CONFIG_TOTEM_BOND_HEAL)
+    /* Failures on the previous profile must not clear the newly selected one. */
+    active_auth_fail_streak = 0;
+#endif
     exclusive_host_evict_all(false);
     exclusive_host_schedule_retry();
     return ZMK_EV_EVENT_BUBBLE;

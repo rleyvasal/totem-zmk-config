@@ -25,6 +25,8 @@ Human-readable fork branch names look like `zmk-optimized-<base-sha>`; west trac
 
 On the ADJ layer, press the target profile’s `&bt BT_SEL`. The previous machine is disconnected automatically; the new one reconnects (typically a few seconds).
 
+**Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
+
 ### Tuning timers (after a week of real use)
 
 Defaults in `config/totem.conf` — change only after you’ve lived with them:

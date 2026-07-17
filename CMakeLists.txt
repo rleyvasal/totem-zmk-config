@@ -7,6 +7,8 @@ if(CONFIG_TOTEM_EXCLUSIVE_HOST)
   zephyr_library_sources(src/exclusive_host.c)
 endif()
 
-# Note: TOTEM_ADV_THROTTLE, TOTEM_ADV_BOOST, and TOTEM_IDLE_DISCONNECT are NOT
-# modules here -- they live in patches/zmk-ble.patch (ZMK app/src/ble.c), because
-# they have to control advertising, which a standalone module can't do cleanly.
+# Note: TOTEM_ADV_THROTTLE, TOTEM_ADV_BOOST, TOTEM_IDLE_DISCONNECT,
+# TOTEM_RESELECT_RECONNECT, and TOTEM_EVICT_ADV_COOLDOWN_MS are NOT modules
+# here -- they live in patches/zmk-ble.patch (ZMK app/src/ble.c), because they
+# have to control advertising / profile-select, which a standalone module can't
+# do cleanly. TOTEM_BOND_HEAL is part of exclusive_host.c above.
