@@ -44,10 +44,9 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 
 **Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
 
-- After a **non-active** host disconnects while the selected host is still away,
-  delay open advertising by this many ms. Breaks the exclusive-host thrash loop
-  (wrong host reconnects immediately and starves the selected one). Profile
-  switch and active-host disconnect re-advertise immediately.
+- Optional delay before open advertising after a non-active host disconnects.
+  **Keep at 0** — a non-zero value also blinds the selected host and regressed
+  dual-host switching (2026-07-17). Profile switch re-advertises immediately.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of

@@ -28,13 +28,13 @@ config TOTEM_EXCLUSIVE_DISCONNECT_REASON
 config TOTEM_BOND_HEAL
 	bool "Auto-clear active profile bond after repeated auth failures"
 	depends on TOTEM_EXCLUSIVE_HOST
-	default y
+	default n
 	help
 	  When the active host fails encryption/auth repeatedly (HCI 0x05 or
-	  security_changed errors), clear that profile's bond on the keyboard so we
-	  do not stay in the macOS "Connected + battery but no typing" zombie state.
-	  The host still needs Forget + re-pair once. Implemented in
-	  src/exclusive_host.c. Central-only.
+	  security_changed errors), clear that profile's bond on the keyboard.
+	  Default n: dual-host thrash can produce transient security errors that
+	  must not wipe a good bond. Experimental only with a logging build.
+	  Implemented in src/exclusive_host.c. Central-only.
 
 config TOTEM_BOND_HEAL_THRESHOLD
 	int "Consecutive active-profile auth failures before bond clear"
@@ -55,15 +55,16 @@ config TOTEM_RESELECT_RECONNECT
 config TOTEM_EVICT_ADV_COOLDOWN_MS
 	int "Delay re-advertising after a non-active host disconnects (ms)"
 	depends on TOTEM_ADV_THROTTLE
-	default 1500
+	default 0
 	range 0 5000
 	help
 	  When a background (non-active) host disconnects and the active profile is
 	  still not connected, wait this many milliseconds before restarting open
-	  advertising. Breaks the exclusive-host eviction thrash loop (other host
-	  reconnects immediately and starves the selected host). 0 disables the
-	  delay. Profile switch and active-host disconnect still re-advertise
-	  immediately. Implemented in patches/zmk-ble.patch. Central-only.
+	  advertising. DEFAULT 0 (off): a non-zero value also blinds the *selected*
+	  host during the pause, which made dual-host switch worse (Win thrash
+	  starved Mac). Keep 0 unless experimenting with a logging build. Profile
+	  switch and active-host disconnect always re-advertise immediately.
+	  Implemented in patches/zmk-ble.patch. Central-only.
 
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"
