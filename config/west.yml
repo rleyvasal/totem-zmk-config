@@ -14,8 +14,8 @@ manifest:
       # Pin the *commit SHA* (not the branch name) so force-pushes cannot change a
       # previously validated build. After flashing a new tip, re-pin here.
       # Bumps: .github/workflows/zmk-bump.yml opens a PR that updates this SHA.
-      # RPA-aware profiles (no keys.h) + open-adv retry + reselect (da2e0361).
-      revision: da2e0361cc7f3884dfc2b02ab92cb0158b33255e
+      # Active-host FAL + RPA match + open-adv retry (e9f8c8e1).
+      revision: e9f8c8e1da5f0096ee2836e0b7b80ababb6accac
       import: app/west.yml
   self:
     path: config

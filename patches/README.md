@@ -51,6 +51,14 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 - Open advertising soft-fails and retries when a background host is holding a
   connection slot, instead of going dark for the selected host.
 
+**Active-host filter accept list** (`CONFIG_TOTEM_ACTIVE_ADV_FILTER`, needs
+`CONFIG_BT_FILTER_ACCEPT_LIST`):
+
+- When the active profile is bonded, advertising uses `BT_LE_ADV_OPT_FILTER_CONN`
+  and the accept list contains **only** that profile's peer. The non-selected
+  computer cannot complete a connection (stops Windows flap while Mac is
+  selected). Open/empty profile → unfiltered ads for pairing.
+
 **Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
 
 - Optional delay before open advertising after a non-active host disconnects.

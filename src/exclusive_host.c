@@ -1,38 +1,21 @@
 /*
- * Exclusive host: keep only the active profile's computer connected. When you
- * switch profiles, disconnect any other computer still connected in the
- * background, and evict a non-active host shortly after it connects, so only
- * the selected computer stays connected.
+ * Exclusive host: keep only the active profile's computer connected.
  *
- * Generic -- no per-host configuration. The active profile is whatever you have
- * selected; everything else is background and gets evicted. Nothing here knows or
- * cares which slot is a Mac vs a PC.
+ * Known non-active profiles (e.g. Windows while Mac is selected) are dropped
+ * as soon as they are identified -- without waiting for encryption to finish.
+ * Waiting for L2 let the wrong host thrash for hundreds of ms per cycle,
+ * hold the only free connection slot, and starve the selected machine
+ * (symptoms: Win flap + Mac greyed out after a clean dual pair).
  *
- * A connection whose address does NOT resolve to a stored profile (idx < 0) is
- * left alone: that is a host mid-resolution -- e.g. a macOS resolvable private
- * address before the IRK match completes -- and dropping it would kill a
- * legitimate reconnect of the active host. A short delayed re-check covers the
- * case where a background host's address resolves a moment later. The
- * identity_resolved callback also re-runs eviction once Zephyr has the identity.
+ * Unresolved addresses (idx < 0, typical macOS RPA before identity resolve)
+ * are still left alone until identity_resolved / security_changed / the
+ * forced fallback, so we never kill the active host mid-RPA.
  *
- * Handshake safety: a link that has not reached encryption (< BT_SECURITY_L2)
- * is not evicted by the normal paths. Cutting a connection mid LE-encryption /
- * SMP handshake is how keyboard and host can end up holding mismatched bonds
- * (the 2026-07-16 dual-host outage: both machines needed forget + re-pair), so
- * eviction of a fresh connection waits for the security_changed callback --
- * encryption settled, success or failure. A forced fallback pass still reaps a
- * background link that never starts encryption at all.
+ * Profile switch: immediate eviction of known non-active established links.
  *
- * Profile switch: evict immediately (same context as the profile-changed
- * event). Established links are dropped so the new profile is not competing
- * with a still-live background peer.
+ * Bond heal remains optional and off by default.
  *
- * Bond heal (CONFIG_TOTEM_BOND_HEAL, default n): optional auto-clear of the
- * active profile after repeated pure auth failures. Keep off under dual-host
- * thrash -- transient security errors must not wipe a good bond.
- *
- * Central-only: the split link to the right half is role central and is skipped;
- * only host links (role peripheral on the central) are touched.
+ * Central-only.
  */
 
 #include <zephyr/kernel.h>
@@ -49,12 +32,11 @@
 
 LOG_MODULE_REGISTER(exclusive_host, CONFIG_ZMK_LOG_LEVEL);
 
-/* Re-check after RPA / identity resolution may have completed. */
 #define EXCLUSIVE_HOST_RETRY_MS 150
 
-/* A bonded background host reaches encryption well under this. A link still
- * below L2 afterwards is not a real handshake -> the fallback force-evicts it. */
-#define EXCLUSIVE_HOST_SETTLE_MS 2000
+/* Force-drop still-unencrypted background links that never identified. Short:
+ * known hosts are already dropped early; this only reaps stuck unknowns. */
+#define EXCLUSIVE_HOST_SETTLE_MS 500
 
 static void log_host_conn(const char *tag, struct bt_conn *conn, uint8_t extra) {
     char addr[BT_ADDR_LE_STR_LEN];
@@ -72,9 +54,8 @@ static void log_host_conn(const char *tag, struct bt_conn *conn, uint8_t extra) 
             active, active_up, (int)sec, extra);
 }
 
-/* Disconnect this connection only if it's a host link (role peripheral on the
- * central) that belongs to a KNOWN profile other than the active one. `data`
- * carries the force flag: when false, a not-yet-encrypted link is spared. */
+/* data = force: when true, also drop unresolved (idx<0) non-active attempts that
+ * are still below L2 after the settle window (stuck ghosts). */
 static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     bool force = (bool)(uintptr_t)data;
     struct bt_conn_info info;
@@ -87,26 +68,31 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     }
 
     int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
-    /* idx < 0: address doesn't resolve to a stored profile yet (host still
-     * resolving / fresh RPA) -> leave it alone so we never kill the active host's
-     * own reconnect. idx == active: this is the selected host -> keep. Never
-     * overridden by force. */
-    if (idx < 0 || idx == zmk_ble_active_profile_index()) {
+    int active = zmk_ble_active_profile_index();
+
+    if (idx == active) {
         return;
     }
 
-    /* Below L2 = encryption hasn't settled -> likely mid-handshake. Evicting now
-     * risks leaving keyboard and host with mismatched bonds; security_changed
-     * will trigger the eviction the moment the handshake finishes, and the
-     * forced fallback reaps links that never encrypt. */
-    if (!force && bt_conn_get_security(conn) < BT_SECURITY_L2) {
-        return;
+    if (idx < 0) {
+        /* Unresolved RPA: only the forced fallback may drop, and only once
+         * encryption never started -- protects an active Mac mid-resolve. */
+        if (!force) {
+            return;
+        }
+        if (bt_conn_get_security(conn) >= BT_SECURITY_L2) {
+            /* Encrypted but unknown: leave it; identity_resolved should map it. */
+            return;
+        }
     }
+
+    /* Known non-active profile (idx >= 0 && idx != active): drop immediately.
+     * Do not wait for L2 -- that was the thrash window. */
 
     char addr[BT_ADDR_LE_STR_LEN];
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-    LOG_INF("Disconnecting background host %s (profile %d, reason 0x%02x)", addr, idx,
-            CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
+    LOG_INF("Disconnecting background host %s (profile %d, reason 0x%02x%s)", addr, idx,
+            CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON, force ? ", force" : "");
     int err = bt_conn_disconnect(conn, CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
     if (err) {
         LOG_WRN("bt_conn_disconnect(%s) failed (err %d)", addr, err);
@@ -137,8 +123,6 @@ static K_WORK_DELAYABLE_DEFINE(exclusive_host_retry_work, exclusive_host_retry_w
 static K_WORK_DELAYABLE_DEFINE(exclusive_host_fallback_work, exclusive_host_fallback_work_handler);
 
 static void exclusive_host_schedule_retry(void) {
-    /* schedule (not reschedule): a flapping background host must not keep
-     * postponing the RPA re-check forever. */
     k_work_schedule(&exclusive_host_retry_work, K_MSEC(EXCLUSIVE_HOST_RETRY_MS));
 }
 
@@ -181,6 +165,9 @@ static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
         return;
     }
     log_host_conn("connected", conn, 0);
+    /* Immediate try: known background hosts drop without waiting for L2. */
+    k_work_submit(&exclusive_host_evict_work);
+    exclusive_host_schedule_retry();
     k_work_reschedule(&exclusive_host_fallback_work, K_MSEC(EXCLUSIVE_HOST_SETTLE_MS));
 }
 
@@ -211,9 +198,6 @@ static void exclusive_host_disconnected(struct bt_conn *conn, uint8_t reason) {
 #endif
 }
 
-/* macOS RPA: once Zephyr resolves identity, re-run eviction so a background
- * host that only just became matchable is dropped, and the active host is not
- * left stuck as idx<0 fail-open forever if it was mis-classified. */
 static void exclusive_host_identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
                                              const bt_addr_le_t *identity) {
     char rpa_s[BT_ADDR_LE_STR_LEN];

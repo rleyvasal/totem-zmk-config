@@ -66,6 +66,19 @@ config TOTEM_EVICT_ADV_COOLDOWN_MS
 	  switch and active-host disconnect always re-advertise immediately.
 	  Implemented in patches/zmk-ble.patch. Central-only.
 
+config TOTEM_ACTIVE_ADV_FILTER
+	bool "Advertise with filter accept list: only active profile may connect"
+	depends on TOTEM_ADV_THROTTLE
+	depends on BT_FILTER_ACCEPT_LIST
+	default y
+	help
+	  When the active profile is bonded, open advertising uses
+	  BT_LE_ADV_OPT_FILTER_CONN and the filter accept list contains only that
+	  profile's peer. Stops the non-selected computer from grabbing the link
+	  (Windows flap while Mac is selected). Pairing an open profile uses
+	  unfiltered advertising. If FAL setup fails, falls back to unfiltered.
+	  Implemented in patches/zmk-ble.patch. Central-only.
+
 config TOTEM_RECONNECT_WATCH
 	bool "Watchdog for stuck profile-switch reconnects"
 	depends on ZMK_BLE
