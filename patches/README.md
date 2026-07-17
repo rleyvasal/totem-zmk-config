@@ -42,10 +42,10 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
   half-dead links (macOS “Connected but mute”) without Forget + re-pair when the
   bond itself is still good.
 
-**IRK-aware profile matching + open-adv retry** (always on with the throttle patch):
+**RPA-aware profile matching + open-adv retry** (always on with the throttle patch):
 
-- `zmk_ble_profile_index` resolves macOS RPAs via `bt_keys_find_irk` so exclusive-host
-  and HID routing see the same profile as the stored identity.
+- `zmk_ble_profile_index` maps a live RPA to a profile by matching against
+  connections looked up via the stored identity (no private `keys.h`).
 - `zmk_ble_active_profile_conn` / `profile_is_connected` fall back to scanning live
   host connections when identity lookup by stored address misses.
 - Open advertising soft-fails and retries when a background host is holding a
