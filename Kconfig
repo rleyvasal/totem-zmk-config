@@ -66,6 +66,22 @@ config TOTEM_EVICT_ADV_COOLDOWN_MS
 	  switch and active-host disconnect always re-advertise immediately.
 	  Implemented in patches/zmk-ble.patch. Central-only.
 
+config TOTEM_RECONNECT_WATCH
+	bool "Watchdog for stuck profile-switch reconnects"
+	depends on ZMK_BLE
+	default y
+	help
+	  After BT_SEL, if the active bonded host does not come up, run a recovery
+	  ladder: kick advertising, force-evict background hosts, then soft-drop a
+	  zombie host conn. Never clears bonds. Module src/reconnect_watch.c.
+	  Central-only.
+
+config TOTEM_RECONNECT_WATCH_SEC
+	int "Seconds between reconnect watch recovery steps"
+	depends on TOTEM_RECONNECT_WATCH
+	default 8
+	range 4 30
+
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"
 	depends on ZMK_BLE

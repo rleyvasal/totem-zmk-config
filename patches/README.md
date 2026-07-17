@@ -42,11 +42,25 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
   half-dead links (macOS “Connected but mute”) without Forget + re-pair when the
   bond itself is still good.
 
+**IRK-aware profile matching + open-adv retry** (always on with the throttle patch):
+
+- `zmk_ble_profile_index` resolves macOS RPAs via `bt_keys_find_irk` so exclusive-host
+  and HID routing see the same profile as the stored identity.
+- `zmk_ble_active_profile_conn` / `profile_is_connected` fall back to scanning live
+  host connections when identity lookup by stored address misses.
+- Open advertising soft-fails and retries when a background host is holding a
+  connection slot, instead of going dark for the selected host.
+
 **Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
 
 - Optional delay before open advertising after a non-active host disconnects.
   **Keep at 0** — a non-zero value also blinds the selected host and regressed
   dual-host switching (2026-07-17). Profile switch re-advertises immediately.
+
+**Reconnect watch** (config module `src/reconnect_watch.c`, not this patch):
+
+- After `BT_SEL`, recovery ladder if the active host stays down (kick ads, evict
+  background, soft-drop zombie). Never clears bonds.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
