@@ -42,6 +42,15 @@
             flavor = "tap-preferred";
             bindings = <&kp>, <&kp>;
         };
+
+        // Dump multi-profile host event ring to USB serial (printk).
+        // Used by combo [ + X and ADJ layer. Requires USB CDC console
+        // (totem_left_logging or CONFIG_ZMK_USB_LOGGING) to *see* the dump;
+        // capture itself works on production BLE without USB.
+        host_log_dump: host_log_dump {
+            compatible = "zmk,behavior-totem-host-log-dump";
+            #binding-cells = <0>;
+        };
     };
 
     combos {
@@ -81,6 +90,16 @@
             timeout-ms = <50>;
             key-positions = <20 21>;
             bindings = <&sys_reset>;
+        };
+
+        // Left-half-ONLY host event log dump: [ (20) + X (22).
+        // Distinct from [ + Z reset. Capture runs all day on production UF2;
+        // dump prints over USB serial when a console is present.
+        // No `layers` -> works on any layer after an incident.
+        combo_host_log_dump {
+            timeout-ms = <50>;
+            key-positions = <20 22>;
+            bindings = <&host_log_dump>;
         };
     };
 
@@ -147,7 +166,7 @@
             bindings = <
                 &trans          &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &bt BT_CLR_ALL
                 &trans          &kp F4          &kp F5          &kp F6          &kp F11             &trans          &bt BT_SEL 3    &bt BT_SEL 4    &trans          &trans
-                &sys_reset      &trans          &kp F1          &kp F2          &kp F3              &kp F10         &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &trans
+                &sys_reset      &host_log_dump  &kp F1          &kp F2          &kp F3              &kp F10         &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &trans
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };

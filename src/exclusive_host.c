@@ -29,6 +29,8 @@
 #include <zmk/event_manager.h>
 #include <zmk/events/ble_active_profile_changed.h>
 
+#include <totem_host_event_log.h>
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 
 LOG_MODULE_REGISTER(exclusive_host, CONFIG_ZMK_LOG_LEVEL);
@@ -78,6 +80,8 @@ static void thrash_note_bg_evict(void) {
 
     uint32_t win = thrash_win_count();
     LOG_INF("totem_ble thrash_win count=%u window_sec=%d", win, CONFIG_TOTEM_THRASH_WINDOW_SEC);
+    totem_host_event_log_record(TOTEM_HEVT_THRASH_WIN, -1, (int8_t)zmk_ble_active_profile_index(),
+                                (uint8_t)win, (uint8_t)win, 0);
 }
 
 static void thrash_clear(void) {
@@ -115,6 +119,10 @@ static void class_a_note_auth_event(bool is_fail) {
     if (class_a_fail_count >= CLASS_A_FAIL_THRESHOLD && win < 2) {
         LOG_WRN("totem_ble CLASS_A_SUSPECT profile=%d auth_fails=%u thrash_win=%u",
                 zmk_ble_active_profile_index(), class_a_fail_count, win);
+        totem_host_event_log_record(TOTEM_HEVT_CLASS_A_SUSPECT,
+                                    (int8_t)zmk_ble_active_profile_index(),
+                                    (int8_t)zmk_ble_active_profile_index(), class_a_fail_count,
+                                    (uint8_t)win, 0);
     }
 }
 #else
@@ -135,9 +143,12 @@ static void log_host_conn_disc(struct bt_conn *conn, uint8_t disc_reason) {
     if (bt_conn_get_info(conn, &info) == 0) {
         role = info.role;
     }
+    uint32_t tw = thrash_win_count();
     LOG_INF("totem_ble disc addr=%s role=%d idx=%d active=%d active_up=%d disc_reason=0x%02x "
             "thrash_win=%u",
-            addr, role, idx, active, active_up, disc_reason, thrash_win_count());
+            addr, role, idx, active, active_up, disc_reason, tw);
+    totem_host_event_log_record(TOTEM_HEVT_DISC, (int8_t)idx, (int8_t)active, disc_reason,
+                                (uint8_t)tw, (uint8_t)role);
 }
 
 static void log_host_conn_event(const char *tag, struct bt_conn *conn, uint8_t extra) {
@@ -193,8 +204,11 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     }
 
     thrash_note_bg_evict();
+    uint32_t tw = thrash_win_count();
     LOG_INF("totem_ble bg_evict addr=%s idx=%d disc_reason=0x%02x thrash_win=%u", addr, idx,
-            CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON, thrash_win_count());
+            CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON, tw);
+    totem_host_event_log_record(TOTEM_HEVT_BG_EVICT, (int8_t)idx, (int8_t)active,
+                                CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON, (uint8_t)tw, 0);
 }
 
 static void exclusive_host_evict_all(bool force) {
@@ -257,14 +271,18 @@ static void bond_heal_note_auth_ok(void) {
 #endif /* CONFIG_TOTEM_BOND_HEAL */
 
 static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
+    int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
+    int active = zmk_ble_active_profile_index();
     if (err) {
         char addr[BT_ADDR_LE_STR_LEN];
         bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-        int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
         LOG_INF("totem_ble connect_fail addr=%s idx=%d err=0x%02x", addr, idx, err);
+        totem_host_event_log_record(TOTEM_HEVT_CONN_FAIL, (int8_t)idx, (int8_t)active, err, 0, 0);
         return;
     }
     log_host_conn_event("connected", conn, 0);
+    totem_host_event_log_record(TOTEM_HEVT_CONN, (int8_t)idx, (int8_t)active, 0,
+                                (uint8_t)thrash_win_count(), 0);
     /* Immediate try: known background hosts drop without waiting for L2. */
     k_work_submit(&exclusive_host_evict_work);
     exclusive_host_schedule_retry();
@@ -281,9 +299,13 @@ static void exclusive_host_security_changed(struct bt_conn *conn, bt_security_t 
     if (err) {
         LOG_INF("totem_ble security_fail addr=%s idx=%d active=%d security_err=%d level=%d", addr,
                 idx, active, (int)err, (int)level);
+        totem_host_event_log_record(TOTEM_HEVT_SEC_FAIL, (int8_t)idx, (int8_t)active, (uint8_t)err,
+                                    (uint8_t)thrash_win_count(), (uint8_t)level);
     } else {
         LOG_INF("totem_ble security_ok addr=%s idx=%d active=%d security_err=0 level=%d", addr, idx,
                 active, (int)level);
+        totem_host_event_log_record(TOTEM_HEVT_SEC_OK, (int8_t)idx, (int8_t)active, 0,
+                                    (uint8_t)thrash_win_count(), (uint8_t)level);
     }
 
     if (idx == active) {
@@ -329,8 +351,10 @@ static void exclusive_host_identity_resolved(struct bt_conn *conn, const bt_addr
     bt_addr_le_to_str(rpa, rpa_s, sizeof(rpa_s));
     bt_addr_le_to_str(identity, id_s, sizeof(id_s));
     int idx = zmk_ble_profile_index(identity);
+    int active = zmk_ble_active_profile_index();
     LOG_INF("totem_ble identity_resolved rpa=%s id=%s idx=%d active=%d active_up=%d", rpa_s, id_s,
-            idx, zmk_ble_active_profile_index(), zmk_ble_active_profile_is_connected());
+            idx, active, zmk_ble_active_profile_is_connected());
+    totem_host_event_log_record(TOTEM_HEVT_IDENTITY, (int8_t)idx, (int8_t)active, 0, 0, 0);
     ARG_UNUSED(conn);
     k_work_submit(&exclusive_host_evict_work);
     exclusive_host_schedule_retry();
@@ -350,9 +374,13 @@ static int exclusive_host_profile_changed(const zmk_event_t *eh) {
 #endif
     thrash_clear();
     class_a_note_auth_event(false);
-    LOG_INF("totem_ble profile_changed active=%d connected=%d open=%d",
-            zmk_ble_active_profile_index(), zmk_ble_active_profile_is_connected(),
-            zmk_ble_active_profile_is_open());
+    int active = zmk_ble_active_profile_index();
+    LOG_INF("totem_ble profile_changed active=%d connected=%d open=%d", active,
+            zmk_ble_active_profile_is_connected(), zmk_ble_active_profile_is_open());
+    totem_host_event_log_record(TOTEM_HEVT_PROFILE_CHANGED, (int8_t)active, (int8_t)active,
+                                zmk_ble_active_profile_is_connected() ? 1 : 0, 0,
+                                zmk_ble_active_profile_is_open() ? 1 : 0);
+    totem_host_event_log_persist();
     exclusive_host_evict_all(false);
     exclusive_host_schedule_retry();
     return ZMK_EV_EVENT_BUBBLE;

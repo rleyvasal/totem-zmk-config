@@ -27,6 +27,8 @@ On the ADJ layer, press the target profile’s `&bt BT_SEL`. The previous machin
 
 **Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. Firmware also runs a reconnect watchdog after each profile switch (kick ads → evict background → soft-drop zombie) without clearing bonds. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
 
+**Host event log (multi-profile):** production firmware records BLE host events for **any** profile into an on-keyboard ring (settings-backed). After an incident, plug the left half over USB and dump with **`[` + `X`** (or ADJ → dump key next to reset). Use a USB serial console (`totem_left_logging` briefly without settings-reset, or temporary `CONFIG_ZMK_USB_LOGGING`). Do **not** stay on the logging image while testing profile switches.
+
 ### Tuning timers (after a week of real use)
 
 Defaults in `config/totem.conf` — change only after you’ve lived with them:
@@ -104,6 +106,7 @@ Skip settings reset; flash both halves with the new left/right UF2s.
 - **N + M:** Dictation (Alt+Space)  
 - **U + Y:** ñ  
 - **[ + Z** (left half only): soft reset  
+- **[ + X** (left half only): dump multi-profile host event log over USB serial  
 - **Mac Lock / Win Lock** on MOD layer  
 
 ## Changing the Keyboard Name

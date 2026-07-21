@@ -106,19 +106,48 @@ config TOTEM_RECONNECT_WATCH_ON_ACTIVE_DOWN
 	  intentionally suppressed (idle go-dark / throttle). Central-only.
 
 config TOTEM_THRASH_DETECT
-	bool "Count background host evictions for dual-host thrash logging"
+	bool "Count background host evictions for multi-host thrash logging"
 	depends on TOTEM_EXCLUSIVE_HOST
 	default y
 	help
 	  Maintain a sliding-window counter of successful exclusive-host background
-	  evictions and emit totem_ble thrash_win / CLASS_A_SUSPECT logs. Does not
-	  change advertising or eviction behavior by itself. Central-only.
+	  evictions (any non-active profile) and emit totem_ble thrash_win /
+	  CLASS_A_SUSPECT logs. Does not change advertising or eviction behavior by
+	  itself. Central-only.
 
 config TOTEM_THRASH_WINDOW_SEC
 	int "Seconds in the thrash sliding window"
 	depends on TOTEM_THRASH_DETECT
 	default 10
 	range 3 60
+
+config TOTEM_HOST_EVENT_LOG
+	bool "Multi-profile host event ring (RAM + settings) with USB dump"
+	depends on ZMK_BLE
+	default y
+	help
+	  Record connect/disconnect/security/thrash/watch events for any BLE
+	  profile index into a circular ring. Persist snapshots to settings so
+	  history survives reboot and firmware flash (without settings-reset).
+	  Dump with &host_log_dump (combo) via printk over USB CDC when console
+	  logging is enabled (zmk-usb-logging snippet or CONFIG_ZMK_USB_LOGGING).
+	  Capture works on the normal production image without USB attached.
+	  Implemented in src/host_event_log.c. Central sources; dump on left.
+
+config TOTEM_HOST_EVENT_LOG_SIZE
+	int "Host event ring capacity"
+	depends on TOTEM_HOST_EVENT_LOG
+	default 128
+	range 32 256
+
+config TOTEM_HOST_EVENT_LOG_PERSIST_EVERY
+	int "Persist ring to settings after this many new events"
+	depends on TOTEM_HOST_EVENT_LOG
+	default 16
+	range 1 128
+	help
+	  Limits flash wear. Dump always persists. Profile changes also trigger
+	  a persist from exclusive-host / reconnect-watch call sites when wired.
 
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"

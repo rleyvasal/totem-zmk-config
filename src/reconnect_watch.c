@@ -25,6 +25,7 @@
 #include <zmk/events/ble_active_profile_changed.h>
 
 #include <totem_reconnect_watch.h>
+#include <totem_host_event_log.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 
@@ -144,6 +145,10 @@ static void reconnect_watch_work_handler(struct k_work *work) {
             /* LIGHT: densify + ensure open ads; never prof_select / never clear throttle. */
             LOG_WRN("totem_ble watch step=1 mode=light profile=%d",
                     zmk_ble_active_profile_index());
+            totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP,
+                                        (int8_t)zmk_ble_active_profile_index(),
+                                        (int8_t)zmk_ble_active_profile_index(), 1,
+                                        (uint8_t)scan.host_count, 1 /* light */);
 #if IS_ENABLED(CONFIG_TOTEM_ADV_BOOST)
             zmk_ble_totem_adv_boost_rearm();
 #else
@@ -153,6 +158,10 @@ static void reconnect_watch_work_handler(struct k_work *work) {
             /* FULL: existing BT_SEL recovery via reselect when enabled. */
             LOG_WRN("totem_ble watch step=1 mode=full profile=%d",
                     zmk_ble_active_profile_index());
+            totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP,
+                                        (int8_t)zmk_ble_active_profile_index(),
+                                        (int8_t)zmk_ble_active_profile_index(), 1,
+                                        (uint8_t)scan.host_count, 0 /* full */);
             (void)zmk_ble_prof_select((uint8_t)zmk_ble_active_profile_index());
         }
         next_step = RECONNECT_STEP_EVICT;
@@ -162,6 +171,10 @@ static void reconnect_watch_work_handler(struct k_work *work) {
     case RECONNECT_STEP_EVICT:
         LOG_WRN("totem_ble watch step=2 force-evict non-active hosts profile=%d",
                 zmk_ble_active_profile_index());
+        totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP, (int8_t)zmk_ble_active_profile_index(),
+                                    (int8_t)zmk_ble_active_profile_index(), 2,
+                                    (uint8_t)scan.host_count,
+                                    ladder_from_active_down ? 1 : 0);
         bt_conn_foreach(BT_CONN_TYPE_LE, drop_non_active_hosts, NULL);
         next_step = RECONNECT_STEP_ZOMBIE;
         k_work_schedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
@@ -170,6 +183,10 @@ static void reconnect_watch_work_handler(struct k_work *work) {
     case RECONNECT_STEP_ZOMBIE:
         /* Never drop unmapped (idx < 0) hosts. Only soft-drop a conn that maps
          * to the active profile but ZMK still reports not connected. */
+        totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP, (int8_t)zmk_ble_active_profile_index(),
+                                    (int8_t)zmk_ble_active_profile_index(), 3,
+                                    (uint8_t)scan.host_count,
+                                    ladder_from_active_down ? 1 : 0);
         if (scan.active_match != NULL && !zmk_ble_active_profile_is_connected()) {
             char addr[BT_ADDR_LE_STR_LEN];
             bt_addr_le_to_str(bt_conn_get_dst(scan.active_match), addr, sizeof(addr));
@@ -200,6 +217,9 @@ static void reconnect_watch_arm_full(void) {
     next_step = RECONNECT_STEP_READV;
     LOG_INF("totem_ble watch arm mode=full profile=%d step_sec=%d",
             zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC);
+    totem_host_event_log_record(TOTEM_HEVT_WATCH_ARM, (int8_t)zmk_ble_active_profile_index(),
+                                (int8_t)zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC, 0,
+                                0 /* full */);
     k_work_reschedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
 }
 
@@ -221,6 +241,9 @@ static void reconnect_watch_arm_light(void) {
     next_step = RECONNECT_STEP_READV;
     LOG_INF("totem_ble watch arm mode=light profile=%d step_sec=%d",
             zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC);
+    totem_host_event_log_record(TOTEM_HEVT_WATCH_ARM, (int8_t)zmk_ble_active_profile_index(),
+                                (int8_t)zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC, 0,
+                                1 /* light */);
     k_work_reschedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
 }
 
@@ -253,6 +276,9 @@ static void active_down_arm_work_handler(struct k_work *work) {
 
     LOG_WRN("totem_ble active_down arm profile=%d source=peer_disc",
             zmk_ble_active_profile_index());
+    totem_host_event_log_record(TOTEM_HEVT_ACTIVE_DOWN_ARM,
+                                (int8_t)zmk_ble_active_profile_index(),
+                                (int8_t)zmk_ble_active_profile_index(), 0, 0, 0);
     reconnect_watch_arm_light();
 }
 

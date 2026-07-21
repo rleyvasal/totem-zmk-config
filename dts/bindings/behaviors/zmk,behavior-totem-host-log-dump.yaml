@@ -1,0 +1,16 @@
+# Copyright (c) 2026 Totem ZMK config
+# SPDX-License-Identifier: MIT
+
+description: Dump multi-profile host event ring to USB serial (printk)
+
+compatible: "zmk,behavior-totem-host-log-dump"
+
+properties:
+  label:
+    type: string
+    required: false
+    deprecated: true
+  "#binding-cells":
+    type: int
+    required: true
+    const: 0
