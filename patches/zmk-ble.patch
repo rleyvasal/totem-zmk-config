@@ -1,5 +1,21 @@
+diff --git a/app/include/zmk/ble.h b/app/include/zmk/ble.h
+index 92b2107d..5e40f1b4 100644
+--- a/app/include/zmk/ble.h
++++ b/app/include/zmk/ble.h
+@@ -40,6 +40,11 @@ bool zmk_ble_active_profile_is_open(void);
+ bool zmk_ble_active_profile_is_connected(void);
+ char *zmk_ble_active_profile_name(void);
+ 
++/* Totem dual-host helpers (patches/zmk-ble.patch; used by config modules). */
++bool zmk_ble_totem_ads_suppressed(void);
++void zmk_ble_totem_adv_boost_rearm(void);
++void zmk_ble_totem_kick_open_adv(void);
++
+ int zmk_ble_unpair_all(void);
+ 
+ int zmk_ble_set_device_name(char *name);
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b9..01d31e2f 100644
+index 51b172b9..fbc0ee90 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -37,6 +37,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -103,7 +119,7 @@ index 51b172b9..01d31e2f 100644
  }
  
  #define CHECKED_ADV_STOP()                                                                         \
-@@ -166,13 +218,287 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
+@@ -166,13 +218,308 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
      }                                                                                              \
      advertising_status = ZMK_ADV_DIR;
  
@@ -150,31 +166,50 @@ index 51b172b9..01d31e2f 100644
 +}
 +#endif
 +
-+/* When the active profile is bonded, only that host may connect (FAL). Open
-+ * profile uses unfiltered ads for pairing. Always defined so CHECKED_OPEN_ADV
-+ * can call it; returns false when the feature is off or setup fails. */
++static void totem_fal_clear_quiet(void) {
++#if IS_ENABLED(CONFIG_BT_FILTER_ACCEPT_LIST)
++    (void)bt_le_filter_accept_list_clear();
++#endif
++}
++
++/* When the active profile is bonded, only that host may complete a connection
++ * (Filter Accept List + BT_LE_ADV_OPT_FILTER_CONN). Open/empty profiles use
++ * unfiltered ads for pairing. Background bonded hosts cannot thrash the link
++ * while another profile is selected — primary multi-host isolation fix.
++ *
++ * Returns true only when FAL is armed and filtered advertising should be used.
++ * Fail-open: any setup error → false (caller uses unfiltered open ads). */
 +static bool totem_prepare_active_fal(void) {
 +#if IS_ENABLED(CONFIG_TOTEM_ACTIVE_ADV_FILTER) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) &&     \
 +    IS_ENABLED(CONFIG_BT_FILTER_ACCEPT_LIST)
-+    int err = bt_le_filter_accept_list_clear();
-+    if (err) {
-+        LOG_WRN("FAL clear failed (err %d)", err);
-+    }
 +    if (zmk_ble_active_profile_is_open()) {
-+        LOG_INF("Active profile open; advertising unfiltered for pairing");
++        LOG_DBG("FAL skip: active profile open (pairing)");
++        totem_fal_clear_quiet();
 +        return false;
 +    }
 +    bt_addr_le_t *peer = zmk_ble_active_profile_addr();
 +    if (peer == NULL || !bt_addr_le_cmp(peer, BT_ADDR_LE_ANY)) {
++        LOG_DBG("FAL skip: no bonded peer on active profile");
++        totem_fal_clear_quiet();
 +        return false;
 +    }
++
++    int err = bt_le_filter_accept_list_clear();
++    if (err && err != -EALREADY) {
++        LOG_WRN("FAL clear failed (err %d); advertising unfiltered", err);
++        return false;
++    }
++
 +    err = bt_le_filter_accept_list_add(peer);
-+    if (err) {
++    /* Already present is OK (some stacks return -EEXIST / -EALREADY). */
++    if (err && err != -EEXIST && err != -EALREADY) {
 +        char addr[BT_ADDR_LE_STR_LEN];
 +        bt_addr_le_to_str(peer, addr, sizeof(addr));
 +        LOG_WRN("FAL add %s failed (err %d); advertising unfiltered", addr, err);
++        totem_fal_clear_quiet();
 +        return false;
 +    }
++
 +    {
 +        char addr[BT_ADDR_LE_STR_LEN];
 +        bt_addr_le_to_str(peer, addr, sizeof(addr));
@@ -183,12 +218,6 @@ index 51b172b9..01d31e2f 100644
 +    return true;
 +#else
 +    return false;
-+#endif
-+}
-+
-+static void totem_fal_clear_quiet(void) {
-+#if IS_ENABLED(CONFIG_BT_FILTER_ACCEPT_LIST)
-+    (void)bt_le_filter_accept_list_clear();
 +#endif
 +}
 +
@@ -201,6 +230,7 @@ index 51b172b9..01d31e2f 100644
 -    advertising_status = ZMK_ADV_CONN;
 +    do {                                                                                           \
 +        bool use_fal = totem_prepare_active_fal();                                                 \
++        bool fal_attempted = use_fal;                                                              \
 +        /* Pass compound literals directly into bt_le_adv_start (lifetime = full call). */         \
 +        if (use_fal) {                                                                             \
 +            err = bt_le_adv_start(totem_adv_boost_active ? ZMK_ADV_CONN_NAME_BOOST_FILTER          \
@@ -210,18 +240,25 @@ index 51b172b9..01d31e2f 100644
 +                LOG_WRN("Filtered advertising failed (err %d); falling back to open", err);        \
 +                use_fal = false;                                                                   \
 +                totem_fal_clear_quiet();                                                           \
++            } else {                                                                               \
++                LOG_DBG("Advertising started (FAL filtered, boost=%d)",                            \
++                        (int)totem_adv_boost_active);                                              \
 +            }                                                                                      \
 +        }                                                                                          \
 +        if (!use_fal) {                                                                            \
 +            err = bt_le_adv_start(totem_adv_boost_active ? ZMK_ADV_CONN_NAME_BOOST                 \
 +                                                         : ZMK_ADV_CONN_NAME,                      \
 +                                  zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL, 0);                    \
++            if (fal_attempted && (err == 0 || err == -EALREADY)) {                                 \
++                LOG_WRN("Advertising open (unfiltered fallback after FAL)");                       \
++            }                                                                                      \
 +        }                                                                                          \
 +        if (err == -EALREADY) {                                                                    \
 +            advertising_status = ZMK_ADV_CONN;                                                     \
 +            err = 0;                                                                               \
 +        } else if (err) {                                                                          \
-+            LOG_WRN("Open advertising start failed (err %d); will retry", err);                    \
++            LOG_WRN("Advertising start failed (err %d); will retry", err);                         \
++            advertising_status = ZMK_ADV_NONE;                                                     \
 +            err = 0;                                                                               \
 +        } else {                                                                                   \
 +            advertising_status = ZMK_ADV_CONN;                                                     \
@@ -397,7 +434,7 @@ index 51b172b9..01d31e2f 100644
  
  int update_advertising(void) {
      int err = 0;
-@@ -194,6 +520,29 @@ int update_advertising(void) {
+@@ -194,6 +541,29 @@ int update_advertising(void) {
      }
      LOG_DBG("advertising from %d to %d", advertising_status, desired_adv);
  
@@ -427,7 +464,7 @@ index 51b172b9..01d31e2f 100644
      switch (desired_adv + CURR_ADV(advertising_status)) {
      case ZMK_ADV_NONE + CURR_ADV(ZMK_ADV_DIR):
      case ZMK_ADV_NONE + CURR_ADV(ZMK_ADV_CONN):
-@@ -216,6 +565,26 @@ int update_advertising(void) {
+@@ -216,6 +586,26 @@ int update_advertising(void) {
          break;
      }
  
@@ -454,7 +491,7 @@ index 51b172b9..01d31e2f 100644
      return 0;
  };
  
-@@ -223,6 +592,83 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
+@@ -223,6 +613,83 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
  
  K_WORK_DEFINE(update_advertising_work, update_advertising_callback);
  
@@ -538,7 +575,7 @@ index 51b172b9..01d31e2f 100644
  static void clear_profile_bond(uint8_t profile) {
      if (bt_addr_le_cmp(&profiles[profile].peer, BT_ADDR_LE_ANY)) {
          bt_unpair(BT_ID_DEFAULT, &profiles[profile].peer);
-@@ -258,6 +704,26 @@ int zmk_ble_profile_index(const bt_addr_le_t *addr) {
+@@ -258,6 +725,26 @@ int zmk_ble_profile_index(const bt_addr_le_t *addr) {
              return i;
          }
      }
@@ -565,7 +602,7 @@ index 51b172b9..01d31e2f 100644
      return -ENODEV;
  }
  
-@@ -291,15 +757,45 @@ int zmk_ble_prof_select(uint8_t index) {
+@@ -291,15 +778,45 @@ int zmk_ble_prof_select(uint8_t index) {
  
      LOG_DBG("profile %d", index);
      if (active_profile == index) {
@@ -612,7 +649,7 @@ index 51b172b9..01d31e2f 100644
  
      return 0;
  };
-@@ -338,6 +834,24 @@ int zmk_ble_prof_disconnect(uint8_t index) {
+@@ -338,6 +855,24 @@ int zmk_ble_prof_disconnect(uint8_t index) {
  
  bt_addr_le_t *zmk_ble_active_profile_addr(void) { return &profiles[active_profile].peer; }
  
@@ -637,7 +674,7 @@ index 51b172b9..01d31e2f 100644
  struct bt_conn *zmk_ble_active_profile_conn(void) {
      struct bt_conn *conn;
      bt_addr_le_t *addr = zmk_ble_active_profile_addr();
-@@ -345,11 +859,17 @@ struct bt_conn *zmk_ble_active_profile_conn(void) {
+@@ -345,11 +880,17 @@ struct bt_conn *zmk_ble_active_profile_conn(void) {
      if (!bt_addr_le_cmp(addr, BT_ADDR_LE_ANY)) {
          LOG_WRN("Not sending, no active address for current profile");
          return NULL;
@@ -658,7 +695,7 @@ index 51b172b9..01d31e2f 100644
      return conn;
  }
  
-@@ -494,6 +1014,12 @@ static struct settings_handler profiles_handler = {
+@@ -494,6 +1035,12 @@ static struct settings_handler profiles_handler = {
  #endif /* IS_ENABLED(CONFIG_SETTINGS) */
  
  static bool is_conn_active_profile(const struct bt_conn *conn) {
@@ -671,7 +708,7 @@ index 51b172b9..01d31e2f 100644
      return bt_addr_le_cmp(bt_conn_get_dst(conn), &profiles[active_profile].peer) == 0;
  }
  
-@@ -526,6 +1052,13 @@ static void connected(struct bt_conn *conn, uint8_t err) {
+@@ -526,6 +1073,13 @@ static void connected(struct bt_conn *conn, uint8_t err) {
          LOG_DBG("Active profile connected");
          k_work_submit(&raise_profile_changed_event_work);
      }
@@ -685,7 +722,7 @@ index 51b172b9..01d31e2f 100644
  }
  
  static void disconnected(struct bt_conn *conn, uint8_t reason) {
-@@ -545,12 +1078,33 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
+@@ -545,12 +1099,33 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
  
      // We need to do this in a work callback, otherwise the advertising update will still see the
      // connection for a profile as active, and not start advertising yet.
@@ -719,7 +756,7 @@ index 51b172b9..01d31e2f 100644
  }
  
  static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err) {
-@@ -737,6 +1291,17 @@ static int zmk_ble_init(void) {
+@@ -737,6 +1312,17 @@ static int zmk_ble_init(void) {
          return err;
      }
  
@@ -737,7 +774,7 @@ index 51b172b9..01d31e2f 100644
  #if IS_ENABLED(CONFIG_SETTINGS)
      settings_register(&profiles_handler);
      k_work_init_delayable(&ble_save_work, ble_save_profile_work);
-@@ -832,3 +1397,11 @@ ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
+@@ -832,3 +1418,11 @@ ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
  #endif /* IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY) */
  
  SYS_INIT(zmk_ble_init, APPLICATION, CONFIG_ZMK_BLE_INIT_PRIORITY);
@@ -749,19 +786,3 @@ index 51b172b9..01d31e2f 100644
 +void zmk_ble_totem_adv_boost_rearm(void) {}
 +void zmk_ble_totem_kick_open_adv(void) {}
 +#endif
-diff --git a/app/include/zmk/ble.h b/app/include/zmk/ble.h
-index 92b2107d..5e40f1b4 100644
---- a/app/include/zmk/ble.h
-+++ b/app/include/zmk/ble.h
-@@ -40,6 +40,11 @@ bool zmk_ble_active_profile_is_open(void);
- bool zmk_ble_active_profile_is_connected(void);
- char *zmk_ble_active_profile_name(void);
- 
-+/* Totem dual-host helpers (patches/zmk-ble.patch; used by config modules). */
-+bool zmk_ble_totem_ads_suppressed(void);
-+void zmk_ble_totem_adv_boost_rearm(void);
-+void zmk_ble_totem_kick_open_adv(void);
-+
- int zmk_ble_unpair_all(void);
- 
- int zmk_ble_set_device_name(char *name);

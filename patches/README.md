@@ -55,9 +55,11 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 `CONFIG_BT_FILTER_ACCEPT_LIST`):
 
 - When the active profile is bonded, advertising uses `BT_LE_ADV_OPT_FILTER_CONN`
-  and the accept list contains **only** that profile's peer. The non-selected
-  computer cannot complete a connection (stops Windows flap while Mac is
-  selected). Open/empty profile → unfiltered ads for pairing.
+  and the accept list contains **only** that profile's peer. Background bonded
+  hosts cannot complete a connection (primary multi-host thrash isolation).
+  Open/empty profile → unfiltered ads for pairing. Fail-open: FAL setup/start
+  failure → unfiltered open advertising. Enabled in `totem.conf` (2026-07-21);
+  set `=n` if advertising vanishes on your hardware.
 
 **Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
 

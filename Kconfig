@@ -72,11 +72,14 @@ config TOTEM_ACTIVE_ADV_FILTER
 	depends on BT_FILTER_ACCEPT_LIST
 	default n
 	help
-	  When the active profile is bonded, open advertising uses
+	  When the active profile is bonded, advertising uses
 	  BT_LE_ADV_OPT_FILTER_CONN and the filter accept list contains only that
-	  profile's peer. DEFAULT n: on nRF/ZMK this regressed to no visible
-	  advertising (2026-07). If enabled and filtered start fails, firmware
-	  falls back to unfiltered open advertising. Central-only.
+	  profile's peer. Background bonded hosts cannot complete a connection
+	  (stops multi-host thrash that can rot the selected bond). Open/empty
+	  profiles advertise unfiltered for pairing. Fail-open: any FAL setup or
+	  filtered start failure falls back to unfiltered open advertising.
+	  Earlier 2026-07 attempt: no ads on some builds — re-enabled 2026-07-21
+	  with clearer fallback; set n in totem.conf if ads vanish. Central-only.
 
 config TOTEM_RECONNECT_WATCH
 	bool "Watchdog for stuck profile-switch reconnects"
