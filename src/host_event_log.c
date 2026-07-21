@@ -6,7 +6,11 @@
  * without settings-reset so you can capture on production then dump on a
  * logging build (or production with ZMK_USB_LOGGING).
  *
- * Central-only for record sources; dump behavior is available on central.
+ * SAFETY (boot brick fix):
+ * - Mutex/work items are statically initialized (settings load can run before
+ *   APPLICATION SYS_INIT and must not lock an uninit mutex).
+ * - Persist/load/dump use static buffers (not ~1.5KB stack frames that can hard
+ *   fault the main/settings stack on nRF52840).
  */
 
 #include <string.h>
@@ -56,9 +60,19 @@ static uint16_t ring_head;  /* next write */
 static uint16_t ring_count; /* 0..RING_CAP */
 static uint32_t ring_seq;
 static uint16_t events_since_persist;
-static struct k_mutex ring_mu;
-static struct k_work dump_work;
-static struct k_work persist_work;
+
+/* Static init: settings handlers and BLE callbacks may run before SYS_INIT. */
+static K_MUTEX_DEFINE(ring_mu);
+
+/* Static buffers — never put the full blob on a call stack. */
+static struct totem_host_event_blob persist_blob;
+static struct totem_host_event dump_tmp[RING_CAP];
+
+static void dump_work_handler(struct k_work *work);
+static void persist_work_handler(struct k_work *work);
+
+static K_WORK_DEFINE(dump_work, dump_work_handler);
+static K_WORK_DEFINE(persist_work, persist_work_handler);
 
 static const char *evt_name(uint8_t type) {
     switch (type) {
@@ -144,22 +158,23 @@ static void persist_work_handler(struct k_work *work) {
 
 void totem_host_event_log_persist(void) {
 #if IS_ENABLED(CONFIG_SETTINGS)
-    struct totem_host_event_blob blob;
-    memset(&blob, 0, sizeof(blob));
-    blob.magic = BLOB_MAGIC;
-
     k_mutex_lock(&ring_mu, K_FOREVER);
-    ring_get_ordered(blob.ev, &blob.count);
-    blob.seq = ring_seq;
+    memset(&persist_blob, 0, sizeof(persist_blob));
+    persist_blob.magic = BLOB_MAGIC;
+    ring_get_ordered(persist_blob.ev, &persist_blob.count);
+    persist_blob.seq = ring_seq;
+    uint16_t count = persist_blob.count;
+    uint32_t seq = persist_blob.seq;
+    size_t len = offsetof(struct totem_host_event_blob, ev) +
+                 (size_t)count * sizeof(struct totem_host_event);
+    /* Copy length under lock; write after unlock to avoid holding mutex during flash. */
     k_mutex_unlock(&ring_mu);
 
-    size_t len = offsetof(struct totem_host_event_blob, ev) +
-                 (size_t)blob.count * sizeof(struct totem_host_event);
-    int err = settings_save_one(SETTINGS_KEY, &blob, len);
+    int err = settings_save_one(SETTINGS_KEY, &persist_blob, len);
     if (err) {
-        LOG_WRN("totem_ble hevt persist failed err=%d count=%u", err, blob.count);
+        LOG_WRN("totem_ble hevt persist failed err=%d count=%u", err, count);
     } else {
-        LOG_DBG("totem_ble hevt persisted count=%u seq=%u", blob.count, blob.seq);
+        LOG_DBG("totem_ble hevt persisted count=%u seq=%u", count, seq);
     }
 #else
     LOG_WRN("totem_ble hevt persist skipped (SETTINGS off)");
@@ -167,7 +182,6 @@ void totem_host_event_log_persist(void) {
 }
 
 static void dump_one(const struct totem_host_event *e, uint16_t i) {
-    /* Stable grep tokens: totem_ble hevt … */
     printk("totem_ble hevt i=%u t_ms=%u type=%s(%u) idx=%d active=%d reason=0x%02x "
            "thrash_win=%u extra=0x%02x\n",
            i, e->uptime_ms, evt_name(e->type), e->type, (int)e->idx, (int)e->active, e->reason,
@@ -175,23 +189,21 @@ static void dump_one(const struct totem_host_event *e, uint16_t i) {
 }
 
 void totem_host_event_log_dump(void) {
-    struct totem_host_event tmp[RING_CAP];
     uint16_t n = 0;
     uint32_t seq;
 
     k_mutex_lock(&ring_mu, K_FOREVER);
-    ring_get_ordered(tmp, &n);
+    ring_get_ordered(dump_tmp, &n);
     seq = ring_seq;
     k_mutex_unlock(&ring_mu);
 
     printk("\n===== totem_ble HOST_EVENT_LOG dump begin count=%u seq=%u cap=%u =====\n", n, seq,
            RING_CAP);
     for (uint16_t i = 0; i < n; i++) {
-        dump_one(&tmp[i], i);
+        dump_one(&dump_tmp[i], i);
     }
     printk("===== totem_ble HOST_EVENT_LOG dump end =====\n\n");
 
-    /* Keep a flash snapshot so a later logging flash can still dump. */
     totem_host_event_log_persist();
 }
 
@@ -204,31 +216,33 @@ static void dump_work_handler(struct k_work *work) {
 static int hevt_settings_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
     const char *next;
     if (settings_name_steq(name, "hevt", &next) && !next) {
-        if (len > sizeof(struct totem_host_event_blob)) {
+        if (len == 0 || len > sizeof(struct totem_host_event_blob)) {
             return -EINVAL;
         }
-        struct totem_host_event_blob blob;
-        memset(&blob, 0, sizeof(blob));
-        int rc = read_cb(cb_arg, &blob, MIN(len, sizeof(blob)));
+
+        /* Static buffer: settings load runs on a small stack. */
+        memset(&persist_blob, 0, sizeof(persist_blob));
+        int rc = read_cb(cb_arg, &persist_blob, MIN(len, sizeof(persist_blob)));
         if (rc < 0) {
             return rc;
         }
-        if (blob.magic != BLOB_MAGIC || blob.count > RING_CAP) {
+        if (persist_blob.magic != BLOB_MAGIC || persist_blob.count > RING_CAP) {
             LOG_WRN("totem_ble hevt settings invalid magic/count");
             return 0;
         }
+
         k_mutex_lock(&ring_mu, K_FOREVER);
         ring_head = 0;
         ring_count = 0;
-        for (uint16_t i = 0; i < blob.count; i++) {
-            ring[ring_head] = blob.ev[i];
+        for (uint16_t i = 0; i < persist_blob.count; i++) {
+            ring[ring_head] = persist_blob.ev[i];
             ring_head = (uint16_t)((ring_head + 1) % RING_CAP);
             ring_count++;
         }
-        ring_seq = blob.seq;
+        ring_seq = persist_blob.seq;
         events_since_persist = 0;
         k_mutex_unlock(&ring_mu);
-        LOG_INF("totem_ble hevt restored count=%u seq=%u", blob.count, blob.seq);
+        LOG_INF("totem_ble hevt restored count=%u seq=%u", persist_blob.count, persist_blob.seq);
         return 0;
     }
     return -ENOENT;
@@ -236,15 +250,6 @@ static int hevt_settings_set(const char *name, size_t len, settings_read_cb read
 
 SETTINGS_STATIC_HANDLER_DEFINE(totem_hevt, "th", NULL, hevt_settings_set, NULL, NULL);
 #endif /* CONFIG_SETTINGS */
-
-static int host_event_log_init(void) {
-    k_mutex_init(&ring_mu);
-    k_work_init(&dump_work, dump_work_handler);
-    k_work_init(&persist_work, persist_work_handler);
-    return 0;
-}
-
-SYS_INIT(host_event_log_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
 /* --- dump behavior: &host_log_dump --- */
 
@@ -257,7 +262,6 @@ static int on_dump_pressed(struct zmk_behavior_binding *binding,
     ARG_UNUSED(binding);
     ARG_UNUSED(event);
     LOG_WRN("totem_ble hevt dump requested");
-    /* Defer off ISR / behavior path so printk bulk does not block matrix. */
     k_work_submit(&dump_work);
     return ZMK_BEHAVIOR_OPAQUE;
 }
@@ -272,7 +276,6 @@ static int on_dump_released(struct zmk_behavior_binding *binding,
 static const struct behavior_driver_api host_log_dump_driver_api = {
     .binding_pressed = on_dump_pressed,
     .binding_released = on_dump_released,
-    /* Left-half combo runs on the event source (central left for Totem). */
     .locality = BEHAVIOR_LOCALITY_EVENT_SOURCE,
 #if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
     .get_parameter_metadata = zmk_behavior_get_empty_param_metadata,
