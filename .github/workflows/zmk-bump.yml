@@ -257,7 +257,8 @@ jobs:
           # Applies cleanly is not enough — ensure throttle / go-dark / boost hooks exist.
           missing=0
           for sym in adv_throttled idle_go_dark idle_disconnect_work totem_adv_boost_active \
-            CONFIG_TOTEM_IDLE_DISCONNECT CONFIG_TOTEM_ADV_BOOST; do
+            CONFIG_TOTEM_IDLE_DISCONNECT CONFIG_TOTEM_ADV_BOOST \
+            zmk_ble_totem_ads_suppressed zmk_ble_totem_adv_boost_rearm zmk_ble_totem_kick_open_adv; do
             if ! git -C zmk grep -q "$sym" -- app/src/ble.c; then
               echo "::error::Post-apply sanity check failed: '${sym}' not found in app/src/ble.c"
               missing=1

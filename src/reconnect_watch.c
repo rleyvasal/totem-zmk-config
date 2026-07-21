@@ -1,16 +1,14 @@
 /*
  * Reconnect watch: after a profile switch (or soft reselect), ensure the
- * selected host actually comes up. Open advertising + exclusive-host eviction
- * are necessary but not sufficient when a background host races the link:
- * advertising can fail while another peer is connected, or the active host can
- * stall mid-reconnect.
+ * selected host actually comes up. Also arms a *light* ladder when the active
+ * host disconnects mid-session (peer-mapped only), without full reselect.
  *
  * Ladder (one step per timeout, never auto-clears bonds):
- *   1) Restart open advertising + re-arm boost (if the patch provides it).
- *   2) Force-evict any non-active host still connected, then advertise again.
- *   3) If a peripheral host is connected but ZMK still does not see the active
- *      profile as connected (zombie / RPA lag), disconnect that host and
- *      re-advertise so a clean reconnect can complete.
+ *   1) FULL (BT_SEL): prof_select / reselect kick.
+ *      LIGHT (active-down): densify boost + open ads; never prof_select.
+ *   2) Force-evict any non-active host still connected.
+ *   3) If a peripheral host maps to active but ZMK still not connected (zombie),
+ *      soft-drop that host only (never idx < 0).
  *
  * Central-only. No address filters. Does not pause advertising "for thrash"
  * (that regressed dual-host switching).
@@ -26,11 +24,15 @@
 #include <zmk/event_manager.h>
 #include <zmk/events/ble_active_profile_changed.h>
 
+#include <totem_reconnect_watch.h>
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 
 LOG_MODULE_REGISTER(reconnect_watch, CONFIG_ZMK_LOG_LEVEL);
 
 #define RECONNECT_WATCH_STEP_SEC CONFIG_TOTEM_RECONNECT_WATCH_SEC
+
+/* Totem helpers from patches/zmk-ble.patch — declared in <zmk/ble.h> on the fork. */
 
 enum reconnect_step {
     RECONNECT_STEP_NONE = 0,
@@ -40,7 +42,10 @@ enum reconnect_step {
 };
 
 static enum reconnect_step next_step;
+/* true ⇒ light step 1 (active-down / storm); false ⇒ full reselect (BT_SEL). */
+static bool ladder_from_active_down;
 static struct k_work_delayable reconnect_watch_work;
+static struct k_work active_down_arm_work;
 
 struct host_conn_scan {
     struct bt_conn *active_match;
@@ -99,100 +104,161 @@ static void drop_non_active_hosts(struct bt_conn *conn, void *data) {
 
     char addr[BT_ADDR_LE_STR_LEN];
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-    LOG_WRN("Reconnect watch: evicting background host %s (profile %d)", addr, idx);
+    LOG_WRN("totem_ble watch step=2 evict addr=%s idx=%d", addr, idx);
     int err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
     if (err) {
-        LOG_WRN("Reconnect watch: disconnect failed (err %d)", err);
+        LOG_WRN("totem_ble watch step=2 disconnect failed err=%d", err);
     }
+}
+
+static void reconnect_watch_reset(void) {
+    next_step = RECONNECT_STEP_NONE;
+    ladder_from_active_down = false;
+    k_work_cancel_delayable(&reconnect_watch_work);
 }
 
 static void reconnect_watch_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
     if (zmk_ble_active_profile_is_open()) {
-        LOG_DBG("Reconnect watch: active profile open (pairing); stop");
-        next_step = RECONNECT_STEP_NONE;
+        LOG_DBG("totem_ble watch stop: open (pairing)");
+        reconnect_watch_reset();
         return;
     }
 
     if (zmk_ble_active_profile_is_connected()) {
-        LOG_INF("Reconnect watch: active profile connected; done");
-        next_step = RECONNECT_STEP_NONE;
+        LOG_INF("totem_ble watch done: active connected");
+        reconnect_watch_reset();
         return;
     }
 
     struct host_conn_scan scan = {0};
     bt_conn_foreach(BT_CONN_TYPE_LE, scan_host_conns, &scan);
 
-    LOG_WRN("Reconnect watch: active profile %d still down (hosts=%d, step=%d)",
+    LOG_WRN("totem_ble watch active_down=%d profile=%d hosts=%d step=%d", ladder_from_active_down,
             zmk_ble_active_profile_index(), scan.host_count, next_step);
 
     switch (next_step) {
     case RECONNECT_STEP_READV:
-        /* Re-select the active profile: with TOTEM_RESELECT_RECONNECT this
-         * clears throttle, re-arms boost, and restarts open advertising even
-         * when nothing is connected yet. Without reselect it is a no-op and
-         * we still advance the ladder. */
-        LOG_WRN("Reconnect watch step1: kick advertising via prof_select(%d)",
-                zmk_ble_active_profile_index());
-        (void)zmk_ble_prof_select((uint8_t)zmk_ble_active_profile_index());
+        if (ladder_from_active_down) {
+            /* LIGHT: densify + ensure open ads; never prof_select / never clear throttle. */
+            LOG_WRN("totem_ble watch step=1 mode=light profile=%d",
+                    zmk_ble_active_profile_index());
+#if IS_ENABLED(CONFIG_TOTEM_ADV_BOOST)
+            zmk_ble_totem_adv_boost_rearm();
+#else
+            zmk_ble_totem_kick_open_adv();
+#endif
+        } else {
+            /* FULL: existing BT_SEL recovery via reselect when enabled. */
+            LOG_WRN("totem_ble watch step=1 mode=full profile=%d",
+                    zmk_ble_active_profile_index());
+            (void)zmk_ble_prof_select((uint8_t)zmk_ble_active_profile_index());
+        }
         next_step = RECONNECT_STEP_EVICT;
         k_work_schedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
         break;
 
     case RECONNECT_STEP_EVICT:
-        LOG_WRN("Reconnect watch step2: force-evict non-active hosts");
+        LOG_WRN("totem_ble watch step=2 force-evict non-active hosts profile=%d",
+                zmk_ble_active_profile_index());
         bt_conn_foreach(BT_CONN_TYPE_LE, drop_non_active_hosts, NULL);
         next_step = RECONNECT_STEP_ZOMBIE;
         k_work_schedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
         break;
 
     case RECONNECT_STEP_ZOMBIE:
-        /* Never drop unmapped (idx < 0) hosts: that is pairing-in-progress or
-         * macOS RPA before resolve. Force-dropping those caused Windows PIN
-         * flash-and-fail and macOS infinite spinner. Only soft-drop a conn that
-         * already maps to the active profile but ZMK still reports not connected. */
+        /* Never drop unmapped (idx < 0) hosts. Only soft-drop a conn that maps
+         * to the active profile but ZMK still reports not connected. */
         if (scan.active_match != NULL && !zmk_ble_active_profile_is_connected()) {
             char addr[BT_ADDR_LE_STR_LEN];
             bt_addr_le_to_str(bt_conn_get_dst(scan.active_match), addr, sizeof(addr));
-            LOG_WRN("Reconnect watch step3: active maps %s but ZMK not connected; soft drop",
-                    addr);
+            LOG_WRN("totem_ble watch step=3 mode=%s zombie soft_drop addr=%s",
+                    ladder_from_active_down ? "light" : "full", addr);
             (void)bt_conn_disconnect(scan.active_match, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
         } else {
-            LOG_WRN("Reconnect watch step3: leave unmapped/pairing hosts alone; keep advertising");
+            LOG_WRN("totem_ble watch step=3 leave unmapped/pairing alone");
         }
-        next_step = RECONNECT_STEP_NONE;
+        reconnect_watch_reset();
         break;
 
     default:
-        next_step = RECONNECT_STEP_NONE;
+        reconnect_watch_reset();
         break;
     }
 
     host_conn_scan_release(&scan);
 }
 
-static void reconnect_watch_arm(void) {
-    if (zmk_ble_active_profile_is_open()) {
-        k_work_cancel_delayable(&reconnect_watch_work);
-        next_step = RECONNECT_STEP_NONE;
+/* BT_SEL / profile_changed: full ladder. */
+static void reconnect_watch_arm_full(void) {
+    if (zmk_ble_active_profile_is_open() || zmk_ble_active_profile_is_connected()) {
+        reconnect_watch_reset();
         return;
     }
-    if (zmk_ble_active_profile_is_connected()) {
-        k_work_cancel_delayable(&reconnect_watch_work);
-        next_step = RECONNECT_STEP_NONE;
-        return;
-    }
-
+    ladder_from_active_down = false;
     next_step = RECONNECT_STEP_READV;
-    LOG_INF("Reconnect watch: armed for profile %d (%d s steps)",
+    LOG_INF("totem_ble watch arm mode=full profile=%d step_sec=%d",
             zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC);
     k_work_reschedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
 }
 
+/* Active-down / optional storm: light ladder — never prof_select in step 1. */
+static void reconnect_watch_arm_light(void) {
+    if (zmk_ble_active_profile_is_open() || zmk_ble_active_profile_is_connected()) {
+        reconnect_watch_reset();
+        return;
+    }
+    if (zmk_ble_totem_ads_suppressed()) {
+        LOG_INF("totem_ble active_down skip: ads_suppressed");
+        return;
+    }
+    if (next_step != RECONNECT_STEP_NONE) {
+        LOG_DBG("totem_ble active_down skip: ladder already armed step=%d", next_step);
+        return;
+    }
+    ladder_from_active_down = true;
+    next_step = RECONNECT_STEP_READV;
+    LOG_INF("totem_ble watch arm mode=light profile=%d step_sec=%d",
+            zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC);
+    k_work_reschedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
+}
+
+/* Public export for exclusive_host storm (if STORM_ARM_WATCH=y): ALWAYS light. */
+void totem_reconnect_watch_arm_if_needed(void) {
+    reconnect_watch_arm_light();
+}
+
+static void active_down_arm_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+
+    if (!IS_ENABLED(CONFIG_TOTEM_RECONNECT_WATCH_ON_ACTIVE_DOWN)) {
+        return;
+    }
+    if (zmk_ble_active_profile_is_open()) {
+        return;
+    }
+    /* Re-check at fire time — not only in disconnected callback. */
+    if (zmk_ble_totem_ads_suppressed()) {
+        LOG_INF("totem_ble active_down skip: ads_suppressed");
+        return;
+    }
+    if (zmk_ble_active_profile_is_connected()) {
+        return;
+    }
+    if (next_step != RECONNECT_STEP_NONE) {
+        LOG_DBG("totem_ble active_down skip: ladder already armed step=%d", next_step);
+        return;
+    }
+
+    LOG_WRN("totem_ble active_down arm profile=%d source=peer_disc",
+            zmk_ble_active_profile_index());
+    reconnect_watch_arm_light();
+}
+
 static int reconnect_watch_profile_changed(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
-    reconnect_watch_arm();
+    reconnect_watch_arm_full();
     return ZMK_EV_EVENT_BUBBLE;
 }
 
@@ -205,10 +271,28 @@ static void reconnect_watch_connected(struct bt_conn *conn, uint8_t err) {
         return;
     }
     if (zmk_ble_active_profile_is_connected()) {
-        k_work_cancel_delayable(&reconnect_watch_work);
-        next_step = RECONNECT_STEP_NONE;
-        LOG_INF("Reconnect watch: active host connected; cancelled");
+        LOG_INF("totem_ble watch cancel: active host connected");
+        reconnect_watch_reset();
     }
+}
+
+static void reconnect_watch_disconnected(struct bt_conn *conn, uint8_t reason) {
+    int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
+    int active = zmk_ble_active_profile_index();
+
+    LOG_INF("totem_ble watch disc idx=%d active=%d disc_reason=0x%02x", idx, active, reason);
+
+    /* Peer-mapped only: never arm on background thrash or unresolved RPA. */
+    if (idx < 0 || idx != active) {
+        return;
+    }
+
+    if (!IS_ENABLED(CONFIG_TOTEM_RECONNECT_WATCH_ON_ACTIVE_DOWN)) {
+        return;
+    }
+
+    /* Defer so conn table / is_connected() match ZMK's deferred update_advertising. */
+    k_work_submit(&active_down_arm_work);
 }
 
 static void reconnect_watch_security_changed(struct bt_conn *conn, bt_security_t level,
@@ -216,18 +300,19 @@ static void reconnect_watch_security_changed(struct bt_conn *conn, bt_security_t
     ARG_UNUSED(conn);
     ARG_UNUSED(err);
     if (level >= BT_SECURITY_L2 && zmk_ble_active_profile_is_connected()) {
-        k_work_cancel_delayable(&reconnect_watch_work);
-        next_step = RECONNECT_STEP_NONE;
+        reconnect_watch_reset();
     }
 }
 
 BT_CONN_CB_DEFINE(reconnect_watch_cb) = {
     .connected = reconnect_watch_connected,
+    .disconnected = reconnect_watch_disconnected,
     .security_changed = reconnect_watch_security_changed,
 };
 
 static int reconnect_watch_init(void) {
     k_work_init_delayable(&reconnect_watch_work, reconnect_watch_work_handler);
+    k_work_init(&active_down_arm_work, active_down_arm_work_handler);
     return 0;
 }
 

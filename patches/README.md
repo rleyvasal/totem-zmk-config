@@ -69,6 +69,12 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 
 - After `BT_SEL`, recovery ladder if the active host stays down (kick ads, evict
   background, soft-drop zombie). Never clears bonds.
+- With `TOTEM_RECONNECT_WATCH_ON_ACTIVE_DOWN`, also arms a **light** ladder when
+  the active peer disconnects mid-session (peer-mapped only; never on background
+  thrash; skips when ads are suppressed for go-dark).
+- Uses patch helpers: `zmk_ble_totem_ads_suppressed`,
+  `zmk_ble_totem_adv_boost_rearm` (densify via stop+restart),
+  `zmk_ble_totem_kick_open_adv`.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of

@@ -14,8 +14,8 @@ manifest:
       # Pin the *commit SHA* (not the branch name) so force-pushes cannot change a
       # previously validated build. After flashing a new tip, re-pin here.
       # Bumps: .github/workflows/zmk-bump.yml opens a PR that updates this SHA.
-      # FAL off by default; unfiltered adv fallback (739d22b8).
-      revision: 739d22b8931d0a39c90a161b0779af98614bbbac
+      # FAL off by default; unfiltered adv fallback; totem ads_suppressed/boost_rearm/kick (8b7ee36e).
+      revision: 8b7ee36ef33d733320098020940f5db79b03805a
       import: app/west.yml
   self:
     path: config

@@ -57,7 +57,10 @@ jobs:
             open_adv_retry_work \
             active_profile_conn_foreach \
             totem_prepare_active_fal \
-            BT_LE_ADV_OPT_FILTER_CONN
+            BT_LE_ADV_OPT_FILTER_CONN \
+            zmk_ble_totem_ads_suppressed \
+            zmk_ble_totem_adv_boost_rearm \
+            zmk_ble_totem_kick_open_adv
           do
             if ! git -C zmk grep -q "$sym" -- app/src/ble.c; then
               echo "::error::Missing '${sym}' in app/src/ble.c — fork tip is not our patched ZMK"

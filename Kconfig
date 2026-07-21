@@ -94,6 +94,32 @@ config TOTEM_RECONNECT_WATCH_SEC
 	default 8
 	range 4 30
 
+config TOTEM_RECONNECT_WATCH_ON_ACTIVE_DOWN
+	bool "Arm light reconnect ladder when the active host disconnects mid-session"
+	depends on TOTEM_RECONNECT_WATCH
+	default y
+	help
+	  When a peer that maps to the active profile disconnects (not background
+	  thrash, not unresolved RPA), arm the light recovery ladder: densify ads /
+	  kick open advertising, force-evict background hosts, soft-drop zombie.
+	  Never full reselect (avoids Class D mute risk). Skips when advertising is
+	  intentionally suppressed (idle go-dark / throttle). Central-only.
+
+config TOTEM_THRASH_DETECT
+	bool "Count background host evictions for dual-host thrash logging"
+	depends on TOTEM_EXCLUSIVE_HOST
+	default y
+	help
+	  Maintain a sliding-window counter of successful exclusive-host background
+	  evictions and emit totem_ble thrash_win / CLASS_A_SUSPECT logs. Does not
+	  change advertising or eviction behavior by itself. Central-only.
+
+config TOTEM_THRASH_WINDOW_SEC
+	int "Seconds in the thrash sliding window"
+	depends on TOTEM_THRASH_DETECT
+	default 10
+	range 3 60
+
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"
 	depends on ZMK_BLE
