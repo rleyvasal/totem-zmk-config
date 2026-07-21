@@ -187,6 +187,17 @@ config TOTEM_ADV_BOOST_SEC
 	default 12
 	range 3 60
 
+config TOTEM_ADV_POST_SWITCH_DARK
+	bool "After profile-switch boost, go dark if selected host not connected"
+	depends on TOTEM_ADV_BOOST
+	default y
+	help
+	  When the boost window after BT_SEL ends and the selected host is still
+	  not connected, pause advertising until a keypress. Limits open-ad thrash
+	  from background bonded hosts (which can rot the selected bond) without
+	  Filter Accept List. Cost: if the host is slow, press any key to resume
+	  advertising. Implemented in patches/zmk-ble.patch. Central-only.
+
 config TOTEM_IDLE_DISCONNECT
 	bool "Disconnect the active host after a long keypress-idle window (then go dark)"
 	depends on TOTEM_ADV_THROTTLE

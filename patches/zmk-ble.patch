@@ -15,7 +15,7 @@ index 92b2107d..5e40f1b4 100644
  
  int zmk_ble_set_device_name(char *name);
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b9..fbc0ee90 100644
+index 51b172b9..045141e0 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -37,6 +37,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -119,7 +119,7 @@ index 51b172b9..fbc0ee90 100644
  }
  
  #define CHECKED_ADV_STOP()                                                                         \
-@@ -166,13 +218,308 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
+@@ -166,13 +218,331 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
      }                                                                                              \
      advertising_status = ZMK_ADV_DIR;
  
@@ -280,7 +280,29 @@ index 51b172b9..fbc0ee90 100644
 +        return;
 +    }
 +    totem_adv_boost_active = false;
-+    if (advertising_status == ZMK_ADV_CONN && !zmk_ble_active_profile_is_connected()) {
++
++    if (zmk_ble_active_profile_is_connected()) {
++        return;
++    }
++
++#if IS_ENABLED(CONFIG_TOTEM_ADV_POST_SWITCH_DARK)
++    /* Selected host did not connect during the boost window. Go dark so
++     * background bonded hosts cannot thrash open ads for minutes/hours
++     * (that thrash can kill the selected host's bond). Keypress resumes. */
++    LOG_INF("Post-switch boost ended; active host not up — advertising dark until keypress");
++    if (advertising_status == ZMK_ADV_CONN || advertising_status == ZMK_ADV_DIR) {
++        int err = bt_le_adv_stop();
++        if (err && err != -EALREADY) {
++            LOG_WRN("Failed to stop advertising for post-switch dark (err %d)", err);
++        }
++        advertising_status = ZMK_ADV_NONE;
++    }
++    adv_throttled = true;
++    open_adv_retry_count = 0;
++    k_work_cancel_delayable(&open_adv_retry_work);
++    return;
++#else
++    if (advertising_status == ZMK_ADV_CONN) {
 +        LOG_INF("Advertising boost ended; returning to normal interval");
 +        int err = bt_le_adv_stop();
 +        if (err) {
@@ -290,6 +312,7 @@ index 51b172b9..fbc0ee90 100644
 +        advertising_status = ZMK_ADV_NONE;
 +        update_advertising();
 +    }
++#endif /* CONFIG_TOTEM_ADV_POST_SWITCH_DARK */
 +}
 +#endif /* CONFIG_TOTEM_ADV_BOOST */
 +
@@ -434,7 +457,7 @@ index 51b172b9..fbc0ee90 100644
  
  int update_advertising(void) {
      int err = 0;
-@@ -194,6 +541,29 @@ int update_advertising(void) {
+@@ -194,6 +564,29 @@ int update_advertising(void) {
      }
      LOG_DBG("advertising from %d to %d", advertising_status, desired_adv);
  
@@ -464,7 +487,7 @@ index 51b172b9..fbc0ee90 100644
      switch (desired_adv + CURR_ADV(advertising_status)) {
      case ZMK_ADV_NONE + CURR_ADV(ZMK_ADV_DIR):
      case ZMK_ADV_NONE + CURR_ADV(ZMK_ADV_CONN):
-@@ -216,6 +586,26 @@ int update_advertising(void) {
+@@ -216,6 +609,26 @@ int update_advertising(void) {
          break;
      }
  
@@ -491,7 +514,7 @@ index 51b172b9..fbc0ee90 100644
      return 0;
  };
  
-@@ -223,6 +613,83 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
+@@ -223,6 +636,83 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
  
  K_WORK_DEFINE(update_advertising_work, update_advertising_callback);
  
@@ -575,7 +598,7 @@ index 51b172b9..fbc0ee90 100644
  static void clear_profile_bond(uint8_t profile) {
      if (bt_addr_le_cmp(&profiles[profile].peer, BT_ADDR_LE_ANY)) {
          bt_unpair(BT_ID_DEFAULT, &profiles[profile].peer);
-@@ -258,6 +725,26 @@ int zmk_ble_profile_index(const bt_addr_le_t *addr) {
+@@ -258,6 +748,26 @@ int zmk_ble_profile_index(const bt_addr_le_t *addr) {
              return i;
          }
      }
@@ -602,7 +625,7 @@ index 51b172b9..fbc0ee90 100644
      return -ENODEV;
  }
  
-@@ -291,15 +778,45 @@ int zmk_ble_prof_select(uint8_t index) {
+@@ -291,15 +801,45 @@ int zmk_ble_prof_select(uint8_t index) {
  
      LOG_DBG("profile %d", index);
      if (active_profile == index) {
@@ -649,7 +672,7 @@ index 51b172b9..fbc0ee90 100644
  
      return 0;
  };
-@@ -338,6 +855,24 @@ int zmk_ble_prof_disconnect(uint8_t index) {
+@@ -338,6 +878,24 @@ int zmk_ble_prof_disconnect(uint8_t index) {
  
  bt_addr_le_t *zmk_ble_active_profile_addr(void) { return &profiles[active_profile].peer; }
  
@@ -674,7 +697,7 @@ index 51b172b9..fbc0ee90 100644
  struct bt_conn *zmk_ble_active_profile_conn(void) {
      struct bt_conn *conn;
      bt_addr_le_t *addr = zmk_ble_active_profile_addr();
-@@ -345,11 +880,17 @@ struct bt_conn *zmk_ble_active_profile_conn(void) {
+@@ -345,11 +903,17 @@ struct bt_conn *zmk_ble_active_profile_conn(void) {
      if (!bt_addr_le_cmp(addr, BT_ADDR_LE_ANY)) {
          LOG_WRN("Not sending, no active address for current profile");
          return NULL;
@@ -695,7 +718,7 @@ index 51b172b9..fbc0ee90 100644
      return conn;
  }
  
-@@ -494,6 +1035,12 @@ static struct settings_handler profiles_handler = {
+@@ -494,6 +1058,12 @@ static struct settings_handler profiles_handler = {
  #endif /* IS_ENABLED(CONFIG_SETTINGS) */
  
  static bool is_conn_active_profile(const struct bt_conn *conn) {
@@ -708,7 +731,7 @@ index 51b172b9..fbc0ee90 100644
      return bt_addr_le_cmp(bt_conn_get_dst(conn), &profiles[active_profile].peer) == 0;
  }
  
-@@ -526,6 +1073,13 @@ static void connected(struct bt_conn *conn, uint8_t err) {
+@@ -526,6 +1096,13 @@ static void connected(struct bt_conn *conn, uint8_t err) {
          LOG_DBG("Active profile connected");
          k_work_submit(&raise_profile_changed_event_work);
      }
@@ -722,7 +745,7 @@ index 51b172b9..fbc0ee90 100644
  }
  
  static void disconnected(struct bt_conn *conn, uint8_t reason) {
-@@ -545,12 +1099,33 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
+@@ -545,12 +1122,33 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
  
      // We need to do this in a work callback, otherwise the advertising update will still see the
      // connection for a profile as active, and not start advertising yet.
@@ -756,7 +779,7 @@ index 51b172b9..fbc0ee90 100644
  }
  
  static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err) {
-@@ -737,6 +1312,17 @@ static int zmk_ble_init(void) {
+@@ -737,6 +1335,17 @@ static int zmk_ble_init(void) {
          return err;
      }
  
@@ -774,7 +797,7 @@ index 51b172b9..fbc0ee90 100644
  #if IS_ENABLED(CONFIG_SETTINGS)
      settings_register(&profiles_handler);
      k_work_init_delayable(&ble_save_work, ble_save_profile_work);
-@@ -832,3 +1418,11 @@ ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
+@@ -832,3 +1441,11 @@ ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
  #endif /* IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY) */
  
  SYS_INIT(zmk_ble_init, APPLICATION, CONFIG_ZMK_BLE_INIT_PRIORITY);

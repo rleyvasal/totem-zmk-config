@@ -14,8 +14,8 @@ manifest:
       # Pin the *commit SHA* (not the branch name) so force-pushes cannot change a
       # previously validated build. After flashing a new tip, re-pin here.
       # Bumps: .github/workflows/zmk-bump.yml opens a PR that updates this SHA.
-      # Active-host FAL hardened + fail-open; totem ads_suppressed/boost_rearm/kick (66f27593).
-      revision: 66f27593bebb5cdd85cf18392dceb675e1737ca6
+      # Post-switch dark + FAL code path (off); ads helpers (e48fa134).
+      revision: e48fa1344887f8a612599514bdb6b55e6557935a
       import: app/west.yml
   self:
     path: config
