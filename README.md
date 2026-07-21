@@ -29,7 +29,7 @@ On the ADJ layer, press the target profile’s `&bt BT_SEL`. The previous machin
 
 **Host event log (multi-profile):** production firmware records BLE host events for **any** profile into an on-keyboard ring (settings-backed). After an incident, plug the left half over USB and dump with **`[` + `X`** (or ADJ → dump key next to reset). Use a USB serial console (`totem_left_logging` briefly without settings-reset, or temporary `CONFIG_ZMK_USB_LOGGING`). Do **not** stay on the logging image while testing profile switches.
 
-**Active-host isolation (FAL):** with a bonded active profile, only that computer may connect (`CONFIG_TOTEM_ACTIVE_ADV_FILTER`). Other bonded hosts are blocked at the controller (not only kicked after connect). If advertising disappears or the selected host never reconnects, set `CONFIG_TOTEM_ACTIVE_ADV_FILTER=n` and reflash left.
+**Active-host isolation (FAL):** **off by default** after field failure (Mac→Win OK, return to Mac broken). Code remains in the fork for experiments; do not enable `CONFIG_TOTEM_ACTIVE_ADV_FILTER` until Mac↔Win↔Mac is proven.
 
 ### Tuning timers (after a week of real use)
 
