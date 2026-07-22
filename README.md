@@ -4,8 +4,9 @@ Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/t
 
 ## Features
 
-- **Dual host Bluetooth** — multi-link with **lazy inactive** params: both PCs can stay connected for fast `BT_SEL`; inactive link uses long intervals (battery); HID only to the active profile
-- **Battery saving** — advertising throttle when the host is away; idle disconnect + “go dark” overnight without wake storms
+- **Dual host Bluetooth** — exclusive-host keeps only the selected profile connected, preventing inactive-host wake and dual-link drain
+- **Wake from sleep** — the selected BLE link stays connected through keyboard idle so a key can wake a supported host
+- **Battery saving** — advertising stops after five minutes when the selected host is genuinely absent
 - **Faster profile switch** — dense advertising boost after `&bt BT_SEL`
 - **Dual battery monitoring** — reports both halves to the host
 - **Colemak-DH** layout with homerow mods, mouse layer, and combos
@@ -15,20 +16,22 @@ Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/t
 
 | Piece | Role |
 |---|---|
-| `src/lazy_inactive_host.c` | Multi-link: snappy params on active host, lazy params on inactive |
-| `src/exclusive_host.c` | Optional: hard-disconnect non-active (slow switches; off by default) |
-| `patches/zmk-ble.patch` on fork `rleyvasal/zmk` | Throttle, idle go-dark, adv boost (in ZMK `ble.c`) |
+| `src/exclusive_host.c` | Disconnects non-active hosts so only the selected profile stays linked |
+| `src/lazy_inactive_host.c` | Optional experimental multi-link mode; disabled by default |
+| `patches/zmk-ble.patch` on fork `rleyvasal/zmk` | Finite advertising throttle and profile-switch boost (in ZMK `ble.c`) |
 | `config/west.yml` | Pins a **commit SHA** of the patched fork (reproducible builds) |
 
 Human-readable fork branch names look like `zmk-optimized-<base-sha>`; west tracks the **SHA** of the applied tip. See `patches/README.md` and `.github/workflows/zmk-bump.yml` (stable-release bumps).
 
 ### Switching computers
 
-On the ADJ layer, press the target profile’s `&bt BT_SEL`. With **lazy multi-link**, both machines can stay connected; HID only goes to the selected profile. Connect each computer once in a session, then switches should feel near-instant.
+On the ADJ layer, press the target profile’s `&bt BT_SEL`. Exclusive-host disconnects the previous computer and connects the selected profile. Only one computer should remain connected.
 
 **Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
 
-**Profile switch time:** After both hosts have linked once, `BT_SEL` should be fast (no reconnect). First connect to a host that fully dropped still costs OS time (Windows often longer). Inactive links use lazy intervals for battery. If the other PC still wakes, set `CONFIG_TOTEM_LAZY_INACTIVE_HOST=n` and `CONFIG_TOTEM_EXCLUSIVE_HOST=y`.
+**Profile switch time:** Every switch requires a real BLE reconnect. macOS often takes a few seconds and Windows can take longer because the host controls scanning. The firmware advertises densely for the first 20 seconds, then normally for up to the five-minute throttle limit.
+
+**Wake behavior:** The selected host remains connected while the keyboard is idle, allowing a keypress to wake hosts whose Bluetooth radio is armed for wake. The inactive host is disconnected. If the selected computer powers down its Bluetooth radio during sleep, no disconnected keyboard can guarantee wake until that computer scans and reconnects.
 
 **Host event log (multi-profile):** production firmware records BLE host events for **any** profile into an on-keyboard ring (settings-backed). After an incident, plug the left half over USB and dump with **`[` + `X`** (or ADJ → dump key next to reset). Use a USB serial console (`totem_left_logging` briefly without settings-reset, or temporary `CONFIG_ZMK_USB_LOGGING`). Do **not** stay on the logging image while testing profile switches.
 
@@ -41,10 +44,9 @@ Defaults in `config/totem.conf` — change only after you’ve lived with them:
 | Setting | Default | What it does |
 |---|---|---|
 | `CONFIG_TOTEM_ADV_THROTTLE_TIMEOUT_MIN` | 5 | Pause advertising after host away this long |
-| `CONFIG_TOTEM_IDLE_DISCONNECT_MIN` | 20 | Drop host + go dark after no keypresses |
-| `CONFIG_TOTEM_ADV_BOOST_SEC` | 12 | Dense 30–60 ms advertising after profile switch |
+| `CONFIG_TOTEM_ADV_BOOST_SEC` | 20 | Dense 30–60 ms advertising after profile switch |
 
-- First key(s) after idle/dark may be lost while reconnecting — expected.
+- A keypress after advertising has throttled resumes advertising; that first key may be lost while reconnecting.
 - Windows reconnect is often slower than macOS (host stack); firmware boost helps discovery only.
 
 ## Layers
