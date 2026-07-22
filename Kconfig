@@ -3,15 +3,55 @@ config TOTEM_EXCLUSIVE_HOST
 	depends on ZMK_BLE
 	default n
 	help
-	  On the central half: disconnect any non-active profile's computer that is
-	  still connected in the background, and drop a non-active host shortly after
-	  it connects, so only the selected computer stays connected. Generic -- no
-	  per-host configuration; the active profile is kept, everything else is
-	  evicted. A connection whose address does not yet resolve to a stored profile
-	  is left alone (protects an active host mid-reconnect), and a freshly
-	  connected host is only evicted once its encryption handshake has settled
-	  (interrupted handshakes can leave keyboard and host with mismatched bonds).
-	  Module in src/exclusive_host.c (no ZMK patch needed). Central-only.
+	  Disconnect any non-active host so only the selected computer stays linked.
+	  Prevents wake/cross-talk and dual-link battery cost, but every BT_SEL pays
+	  a full reconnect (often slow on Windows). Prefer TOTEM_LAZY_INACTIVE_HOST
+	  for fast switches with multi-link + lazy params on the inactive host.
+	  Module src/exclusive_host.c. Central-only. Do not enable together with
+	  TOTEM_LAZY_INACTIVE_HOST (lazy mode wants background hosts to stay up).
+
+config TOTEM_LAZY_INACTIVE_HOST
+	bool "Multi-link: keep inactive hosts connected with lazy connection params"
+	depends on ZMK_BLE
+	depends on !TOTEM_EXCLUSIVE_HOST
+	default n
+	help
+	  Leave non-active bonded hosts connected so profile switch does not force
+	  a full BLE reconnect (near-instant BT_SEL after both have linked once).
+	  Request long interval / high latency on inactive links to reduce battery
+	  use and link activity that can disturb a sleeping PC. Active profile gets
+	  normal snappy peripheral preferred params. HID still only to active
+	  profile. Module src/lazy_inactive_host.c. Central-only.
+
+config TOTEM_LAZY_HOST_MIN_INT
+	int "Lazy inactive host min connection interval (1.25 ms units)"
+	depends on TOTEM_LAZY_INACTIVE_HOST
+	default 80
+	range 24 320
+	help
+	  80 = 100 ms. Host may negotiate differently.
+
+config TOTEM_LAZY_HOST_MAX_INT
+	int "Lazy inactive host max connection interval (1.25 ms units)"
+	depends on TOTEM_LAZY_INACTIVE_HOST
+	default 160
+	range 24 320
+	help
+	  160 = 200 ms.
+
+config TOTEM_LAZY_HOST_LATENCY
+	int "Lazy inactive host slave latency (events)"
+	depends on TOTEM_LAZY_INACTIVE_HOST
+	default 4
+	range 0 30
+
+config TOTEM_LAZY_HOST_TIMEOUT
+	int "Lazy inactive host supervision timeout (10 ms units)"
+	depends on TOTEM_LAZY_INACTIVE_HOST
+	default 500
+	range 100 3200
+	help
+	  500 = 5 s.
 
 config TOTEM_EXCLUSIVE_DISCONNECT_REASON
 	hex "HCI reason code used to disconnect a background host"
