@@ -27,7 +27,7 @@ On the ADJ layer, press the target profile’s `&bt BT_SEL`. The previous machin
 
 **Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. Firmware also densifies advertising after each profile switch; if the host is slow, wait for Connected before switching again. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
 
-**Faster switches:** With exclusive-host **off**, after Mac and Windows have each connected once in a session, further `BT_SEL` switches should be **near-instant** (no reconnect). The first connect to a host that was fully dropped still costs OS time (Windows often ~5–15s). Device Manager → Bluetooth adapter → Power Management → uncheck “Allow the computer to turn off this device to save power” helps Windows.
+**Profile switch time:** Exclusive-host disconnects the machine you leave, so each switch does a full BLE reconnect. Expect a few seconds on Mac and often longer on Windows (host stack). That is the tradeoff for not waking the other PC and not holding two host links. Windows: Device Manager → Bluetooth adapter → Power Management → uncheck “Allow the computer to turn off this device to save power.”
 
 **Host event log (multi-profile):** production firmware records BLE host events for **any** profile into an on-keyboard ring (settings-backed). After an incident, plug the left half over USB and dump with **`[` + `X`** (or ADJ → dump key next to reset). Use a USB serial console (`totem_left_logging` briefly without settings-reset, or temporary `CONFIG_ZMK_USB_LOGGING`). Do **not** stay on the logging image while testing profile switches.
 
