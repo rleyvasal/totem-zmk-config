@@ -25,7 +25,9 @@ Human-readable fork branch names look like `zmk-optimized-<base-sha>`; west trac
 
 On the ADJ layer, press the target profile’s `&bt BT_SEL`. The previous machine is disconnected automatically; the new one reconnects (typically a few seconds).
 
-**Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. Firmware also runs a reconnect watchdog after each profile switch (kick ads → evict background → soft-drop zombie) without clearing bonds. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
+**Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. Firmware also densifies advertising after each profile switch; if the host is slow, wait for Connected before switching again. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
+
+**Faster switches:** Windows is often the slow side (OS LE scan). In Device Manager → Bluetooth adapter → Power Management, uncheck “Allow the computer to turn off this device to save power.” Typical firmware floor after switch is a few seconds; >10s is often host scan or a mid-connect reselect (mitigated in recent firmware).
 
 **Host event log (multi-profile):** production firmware records BLE host events for **any** profile into an on-keyboard ring (settings-backed). After an incident, plug the left half over USB and dump with **`[` + `X`** (or ADJ → dump key next to reset). Use a USB serial console (`totem_left_logging` briefly without settings-reset, or temporary `CONFIG_ZMK_USB_LOGGING`). Do **not** stay on the logging image while testing profile switches.
 

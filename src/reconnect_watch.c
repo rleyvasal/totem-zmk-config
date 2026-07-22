@@ -33,6 +33,18 @@ LOG_MODULE_REGISTER(reconnect_watch, CONFIG_ZMK_LOG_LEVEL);
 
 #define RECONNECT_WATCH_STEP_SEC CONFIG_TOTEM_RECONNECT_WATCH_SEC
 
+/* First recovery step waits out the post-switch boost window when boost is on,
+ * so we do not abort an in-flight host reconnect (e.g. slow Windows) with a
+ * mid-window reselect. Later steps use RECONNECT_WATCH_STEP_SEC. */
+static int reconnect_watch_first_delay_sec(void) {
+#if IS_ENABLED(CONFIG_TOTEM_ADV_BOOST)
+    if (CONFIG_TOTEM_ADV_BOOST_SEC > RECONNECT_WATCH_STEP_SEC) {
+        return CONFIG_TOTEM_ADV_BOOST_SEC;
+    }
+#endif
+    return RECONNECT_WATCH_STEP_SEC;
+}
+
 /* Totem helpers from patches/zmk-ble.patch — declared in <zmk/ble.h> on the fork. */
 
 enum reconnect_step {
@@ -141,29 +153,20 @@ static void reconnect_watch_work_handler(struct k_work *work) {
 
     switch (next_step) {
     case RECONNECT_STEP_READV:
-        if (ladder_from_active_down) {
-            /* LIGHT: densify + ensure open ads; never prof_select / never clear throttle. */
-            LOG_WRN("totem_ble watch step=1 mode=light profile=%d",
-                    zmk_ble_active_profile_index());
-            totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP,
-                                        (int8_t)zmk_ble_active_profile_index(),
-                                        (int8_t)zmk_ble_active_profile_index(), 1,
-                                        (uint8_t)scan.host_count, 1 /* light */);
+        /* Always densify/kick ads — never prof_select here. Reselect soft-recovery
+         * is only for intentional same-profile BT_SEL; auto reselect at ~8s was
+         * aborting slow host reconnects and making switches feel >10s. */
+        LOG_WRN("totem_ble watch step=1 mode=%s densify profile=%d",
+                ladder_from_active_down ? "light" : "full", zmk_ble_active_profile_index());
+        totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP, (int8_t)zmk_ble_active_profile_index(),
+                                    (int8_t)zmk_ble_active_profile_index(), 1,
+                                    (uint8_t)scan.host_count,
+                                    ladder_from_active_down ? 1 : 0);
 #if IS_ENABLED(CONFIG_TOTEM_ADV_BOOST)
-            zmk_ble_totem_adv_boost_rearm();
+        zmk_ble_totem_adv_boost_rearm();
 #else
-            zmk_ble_totem_kick_open_adv();
+        zmk_ble_totem_kick_open_adv();
 #endif
-        } else {
-            /* FULL: existing BT_SEL recovery via reselect when enabled. */
-            LOG_WRN("totem_ble watch step=1 mode=full profile=%d",
-                    zmk_ble_active_profile_index());
-            totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP,
-                                        (int8_t)zmk_ble_active_profile_index(),
-                                        (int8_t)zmk_ble_active_profile_index(), 1,
-                                        (uint8_t)scan.host_count, 0 /* full */);
-            (void)zmk_ble_prof_select((uint8_t)zmk_ble_active_profile_index());
-        }
         next_step = RECONNECT_STEP_EVICT;
         k_work_schedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
         break;
@@ -207,7 +210,7 @@ static void reconnect_watch_work_handler(struct k_work *work) {
     host_conn_scan_release(&scan);
 }
 
-/* BT_SEL / profile_changed: full ladder. */
+/* BT_SEL / profile_changed: recovery ladder (step1 = densify only, no reselect). */
 static void reconnect_watch_arm_full(void) {
     if (zmk_ble_active_profile_is_open() || zmk_ble_active_profile_is_connected()) {
         reconnect_watch_reset();
@@ -215,12 +218,13 @@ static void reconnect_watch_arm_full(void) {
     }
     ladder_from_active_down = false;
     next_step = RECONNECT_STEP_READV;
-    LOG_INF("totem_ble watch arm mode=full profile=%d step_sec=%d",
-            zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC);
+    int delay = reconnect_watch_first_delay_sec();
+    LOG_INF("totem_ble watch arm mode=full profile=%d first_delay_sec=%d",
+            zmk_ble_active_profile_index(), delay);
     totem_host_event_log_record(TOTEM_HEVT_WATCH_ARM, (int8_t)zmk_ble_active_profile_index(),
-                                (int8_t)zmk_ble_active_profile_index(), RECONNECT_WATCH_STEP_SEC, 0,
+                                (int8_t)zmk_ble_active_profile_index(), (uint8_t)delay, 0,
                                 0 /* full */);
-    k_work_reschedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
+    k_work_reschedule(&reconnect_watch_work, K_SECONDS(delay));
 }
 
 /* Active-down / optional storm: light ladder — never prof_select in step 1. */
