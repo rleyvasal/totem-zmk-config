@@ -9,13 +9,10 @@ manifest:
   projects:
     - name: zmk
       remote: fork
-      # Official ZMK + patches/zmk-ble.patch (throttle, idle go-dark, adv boost).
-      # Human branch label on the fork: zmk-optimized-484a054 (base upstream 484a054).
-      # Pin the *commit SHA* (not the branch name) so force-pushes cannot change a
-      # previously validated build. After flashing a new tip, re-pin here.
-      # Bumps: .github/workflows/zmk-bump.yml opens a PR that updates this SHA.
-      # Post-switch dark + FAL code path (off); ads helpers (e48fa134).
-      revision: e48fa1344887f8a612599514bdb6b55e6557935a
+      # Official ZMK + patches/zmk-ble.patch (throttle, idle go-dark, adv boost,
+      # directed-then-open). Branch: zmk-optimized-484a054. Pin tip SHA.
+      # Bumps: .github/workflows/zmk-bump.yml
+      revision: 074df9b70720de69c8f961fc8977bd5716adbf03
       import: app/west.yml
   self:
     path: config

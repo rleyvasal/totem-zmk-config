@@ -209,6 +209,28 @@ config TOTEM_ADV_POST_SWITCH_DARK
 	  Filter Accept List. Cost: if the host is slow, press any key to resume
 	  advertising. Implemented in patches/zmk-ble.patch. Central-only.
 
+config TOTEM_DIR_THEN_OPEN
+	bool "Directed advertising then open undirected after profile switch"
+	depends on TOTEM_ADV_THROTTLE
+	default n
+	help
+	  After BT_SEL (exclusive-host still drops the previous host), first
+	  advertise *directed* to the active bonded peer for TOTEM_DIR_ADV_SEC,
+	  then fall back to open undirected (with boost if enabled). Goal: faster
+	  discovery for the selected host without multi-link. Directed may fail
+	  on some privacy centrals — fail-open to undirected immediately.
+	  Implemented in patches/zmk-ble.patch. Central-only.
+
+config TOTEM_DIR_ADV_SEC
+	int "Seconds of directed advertising after profile switch"
+	depends on TOTEM_DIR_THEN_OPEN
+	default 4
+	range 1 15
+	help
+	  Low-duty directed phase length before open undirected. Keep short so
+	  macOS (RPA) still gets undirected boost quickly if directed does not
+	  help.
+
 config TOTEM_IDLE_DISCONNECT
 	bool "Disconnect the active host after a long keypress-idle window (then go dark)"
 	depends on TOTEM_ADV_THROTTLE

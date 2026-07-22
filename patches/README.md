@@ -35,6 +35,14 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 - Profile select also **raises the profile-changed event before advertising**, so
   exclusive-host can drop the previous computer first.
 
+**Directed-then-open** (`CONFIG_TOTEM_DIR_THEN_OPEN`, requires the throttle):
+
+- After profile switch, for `CONFIG_TOTEM_DIR_ADV_SEC` seconds advertise
+  **directed** (low-duty) to the active bonded peer (try `DIR_ADDR_RPA` for
+  privacy centrals), then switch to **open undirected** + boost.
+- Exclusive-host still disconnects the previous host (no multi-link).
+- Directed start failure → immediate open undirected (fail-open).
+
 **Reselect soft-reconnect** (`CONFIG_TOTEM_RESELECT_RECONNECT`, requires the throttle):
 
 - Pressing `&bt BT_SEL n` when profile `n` is **already active** disconnects that
