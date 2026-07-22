@@ -4,7 +4,7 @@ Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/t
 
 ## Features
 
-- **Dual host Bluetooth** — both hosts can stay linked; HID goes only to the active profile for fast `BT_SEL` switches (exclusive-host optional / off by default)
+- **Dual host Bluetooth** — exclusive-host keeps only the active profile connected (no wake/cross-talk on the other PC; better battery)
 - **Battery saving** — advertising throttle when the host is away; idle disconnect + “go dark” overnight without wake storms
 - **Faster profile switch** — dense advertising boost after `&bt BT_SEL`
 - **Dual battery monitoring** — reports both halves to the host
