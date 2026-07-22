@@ -146,11 +146,22 @@ config TOTEM_HOST_EVENT_LOG_SIZE
 config TOTEM_HOST_EVENT_LOG_PERSIST_EVERY
 	int "Persist ring to settings after this many new events"
 	depends on TOTEM_HOST_EVENT_LOG
-	default 16
+	default 32
 	range 1 128
 	help
-	  Limits flash wear. Dump always persists. Profile changes also trigger
-	  a persist from exclusive-host / reconnect-watch call sites when wired.
+	  Count threshold before a flash snapshot is *requested*. Actual writes
+	  are also rate-limited by TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS so thrash
+	  storms cannot spam NVS (which can hang the central / kill USB+BLE).
+
+config TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS
+	int "Minimum milliseconds between host-event flash persists"
+	depends on TOTEM_HOST_EVENT_LOG
+	default 60000
+	range 5000 600000
+	help
+	  Coalesce settings writes during dual-host thrash. RAM ring still
+	  records every event; only NVS is throttled. Dump still requests a
+	  persist (subject to this interval).
 
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"

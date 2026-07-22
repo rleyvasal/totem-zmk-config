@@ -34,6 +34,9 @@ LOG_MODULE_REGISTER(host_event_log, CONFIG_ZMK_LOG_LEVEL);
 #define RING_CAP CONFIG_TOTEM_HOST_EVENT_LOG_SIZE
 #define SETTINGS_KEY "th/hevt"
 #define PERSIST_EVERY CONFIG_TOTEM_HOST_EVENT_LOG_PERSIST_EVERY
+/* Flash NVS under dual-host thrash can stall the central for long enough that
+ * BLE + USB HID look dead until power-cycle. Never persist more often than this. */
+#define PERSIST_MIN_INTERVAL_MS CONFIG_TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS
 
 struct totem_host_event {
     uint32_t uptime_ms;
@@ -60,6 +63,8 @@ static uint16_t ring_head;  /* next write */
 static uint16_t ring_count; /* 0..RING_CAP */
 static uint32_t ring_seq;
 static uint16_t events_since_persist;
+static int64_t last_persist_uptime_ms;
+static bool persist_requested;
 
 /* Static init: settings handlers and BLE callbacks may run before SYS_INIT. */
 static K_MUTEX_DEFINE(ring_mu);
@@ -72,7 +77,7 @@ static void dump_work_handler(struct k_work *work);
 static void persist_work_handler(struct k_work *work);
 
 static K_WORK_DEFINE(dump_work, dump_work_handler);
-static K_WORK_DEFINE(persist_work, persist_work_handler);
+static K_WORK_DELAYABLE_DEFINE(persist_work, persist_work_handler);
 
 static const char *evt_name(uint8_t type) {
     switch (type) {
@@ -120,6 +125,19 @@ static void ring_get_ordered(struct totem_host_event *out, uint16_t *out_count) 
     }
 }
 
+static void schedule_persist_coalesced(void) {
+    persist_requested = true;
+    int64_t now = k_uptime_get();
+    int64_t elapsed = now - last_persist_uptime_ms;
+    int32_t wait_ms = 0;
+
+    if (last_persist_uptime_ms != 0 && elapsed < PERSIST_MIN_INTERVAL_MS) {
+        wait_ms = (int32_t)(PERSIST_MIN_INTERVAL_MS - elapsed);
+    }
+    /* Coalesce: many thrash events → one delayed flash write. */
+    k_work_reschedule(&persist_work, K_MSEC(wait_ms));
+}
+
 void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
                                  uint8_t thrash_win, uint8_t extra) {
     struct totem_host_event e = {
@@ -140,24 +158,34 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
     }
     ring_seq++;
     events_since_persist++;
-    bool do_persist = (events_since_persist >= PERSIST_EVERY);
-    if (do_persist) {
+    bool need_persist = (events_since_persist >= PERSIST_EVERY);
+    if (need_persist) {
         events_since_persist = 0;
     }
     k_mutex_unlock(&ring_mu);
 
-    if (do_persist) {
-        k_work_submit(&persist_work);
+    if (need_persist) {
+        schedule_persist_coalesced();
     }
 }
 
 static void persist_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
+    if (!persist_requested) {
+        return;
+    }
     totem_host_event_log_persist();
 }
 
 void totem_host_event_log_persist(void) {
 #if IS_ENABLED(CONFIG_SETTINGS)
+    int64_t now = k_uptime_get();
+    if (last_persist_uptime_ms != 0 && (now - last_persist_uptime_ms) < PERSIST_MIN_INTERVAL_MS) {
+        /* Too soon (e.g. dump requested during thrash) — defer. */
+        schedule_persist_coalesced();
+        return;
+    }
+
     k_mutex_lock(&ring_mu, K_FOREVER);
     memset(&persist_blob, 0, sizeof(persist_blob));
     persist_blob.magic = BLOB_MAGIC;
@@ -167,10 +195,12 @@ void totem_host_event_log_persist(void) {
     uint32_t seq = persist_blob.seq;
     size_t len = offsetof(struct totem_host_event_blob, ev) +
                  (size_t)count * sizeof(struct totem_host_event);
-    /* Copy length under lock; write after unlock to avoid holding mutex during flash. */
+    persist_requested = false;
+    /* Copy under lock; write after unlock so BLE callbacks are not blocked on flash. */
     k_mutex_unlock(&ring_mu);
 
     int err = settings_save_one(SETTINGS_KEY, &persist_blob, len);
+    last_persist_uptime_ms = k_uptime_get();
     if (err) {
         LOG_WRN("totem_ble hevt persist failed err=%d count=%u", err, count);
     } else {
@@ -178,6 +208,7 @@ void totem_host_event_log_persist(void) {
     }
 #else
     LOG_WRN("totem_ble hevt persist skipped (SETTINGS off)");
+    persist_requested = false;
 #endif
 }
 
