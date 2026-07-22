@@ -15,7 +15,8 @@ Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/t
 
 | Piece | Role |
 |---|---|
-| `src/exclusive_host.c` | Evict non-active host on connect / profile switch |
+| `src/lazy_inactive_host.c` | Multi-link: snappy params on active host, lazy params on inactive |
+| `src/exclusive_host.c` | Optional: hard-disconnect non-active (slow switches; off by default) |
 | `patches/zmk-ble.patch` on fork `rleyvasal/zmk` | Throttle, idle go-dark, adv boost (in ZMK `ble.c`) |
 | `config/west.yml` | Pins a **commit SHA** of the patched fork (reproducible builds) |
 
@@ -23,11 +24,11 @@ Human-readable fork branch names look like `zmk-optimized-<base-sha>`; west trac
 
 ### Switching computers
 
-On the ADJ layer, press the target profile’s `&bt BT_SEL`. The previous machine is disconnected automatically; the new one reconnects (typically a few seconds).
+On the ADJ layer, press the target profile’s `&bt BT_SEL`. With **lazy multi-link**, both machines can stay connected; HID only goes to the selected profile. Connect each computer once in a session, then switches should feel near-instant.
 
-**Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. Firmware also densifies advertising after each profile switch; if the host is slow, wait for Connected before switching again. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
+**Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
 
-**Profile switch time:** Exclusive-host disconnects the machine you leave (no wake / dual-link battery), then dense **undirected** advertising. Expect a few seconds on Mac and often longer on Windows (host LE scan after we disconnect it). Windows: Device Manager → Bluetooth adapter → Power Management → uncheck “Allow the computer to turn off this device to save power.”
+**Profile switch time:** After both hosts have linked once, `BT_SEL` should be fast (no reconnect). First connect to a host that fully dropped still costs OS time (Windows often longer). Inactive links use lazy intervals for battery. If the other PC still wakes, set `CONFIG_TOTEM_LAZY_INACTIVE_HOST=n` and `CONFIG_TOTEM_EXCLUSIVE_HOST=y`.
 
 **Host event log (multi-profile):** production firmware records BLE host events for **any** profile into an on-keyboard ring (settings-backed). After an incident, plug the left half over USB and dump with **`[` + `X`** (or ADJ → dump key next to reset). Use a USB serial console (`totem_left_logging` briefly without settings-reset, or temporary `CONFIG_ZMK_USB_LOGGING`). Do **not** stay on the logging image while testing profile switches.
 
