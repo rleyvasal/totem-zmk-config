@@ -19,6 +19,30 @@ jobs:
       - name: Checkout config
         uses: actions/checkout@v5
 
+      - name: Require validated BLE policy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          require_config() {
+            local expected="$1"
+            if ! grep -qxF "$expected" config/totem.conf; then
+              echo "::error::Stable BLE policy requires: $expected"
+              exit 1
+            fi
+            echo "OK  $expected"
+          }
+
+          for expected in \
+            "CONFIG_ZMK_SLEEP=n" \
+            "CONFIG_TOTEM_EXCLUSIVE_HOST=y" \
+            "CONFIG_TOTEM_LAZY_INACTIVE_HOST=n" \
+            "CONFIG_TOTEM_IDLE_DISCONNECT=n" \
+            "CONFIG_TOTEM_ADV_POST_SWITCH_DARK=n"
+          do
+            require_config "$expected"
+          done
+
       - name: Resolve west.yml zmk revision
         id: rev
         run: |
