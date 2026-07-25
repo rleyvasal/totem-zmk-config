@@ -157,7 +157,10 @@
             bindings = <
                 &mac_lock       &win_lock       &trans          &trans          &trans              &kp C_PREV      &kp C_PP        &kp C_NEXT      &kp C_BRI_UP    &trans
                 &kp CAPS        &sk LALT        &sk LSHFT       &sk LCTRL       &trans              &kp BSPC        &kp DEL         &kp SPACE       &kp ENTER       &kp TAB
-                &trans          &trans          &trans          &trans          &trans              &trans          &kp C_VOL_DN    &kp C_MUTE      &kp C_VOL_UP    &kp C_BRI_DN    &trans          &trans
+                // LEFT-HALF-ONLY BT controls (21-25). MOD is the left Tab thumb (34), so
+                // these reach the central without the split link -- unlike the ADJ copies,
+                // which need the right-half Enter thumb (35) plus right-half keys.
+                &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &bt BT_CLR_ALL      &kp C_VOL_DN    &kp C_MUTE      &kp C_VOL_UP    &kp C_BRI_DN    &trans          &trans
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };

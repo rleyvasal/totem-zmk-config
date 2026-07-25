@@ -50,6 +50,47 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
   half-dead links (macOS “Connected but mute”) without Forget + re-pair when the
   bond itself is still good.
 
+**Self-recovery without power switches** (`CONFIG_TOTEM_RPA_DISCONNECT`,
+`CONFIG_TOTEM_ADV_RECONCILE`, `CONFIG_TOTEM_RECOVERY_REBOOT`):
+
+Fixes the 2026-07-24 failure: Mac away 6 h, returned greyed out in macOS
+Bluetooth; keypresses, repeated `BT_SEL 0` and toggling macOS Bluetooth all did
+nothing, and only power-cycling both halves recovered it.
+
+- **Root cause.** `zmk_ble_prof_disconnect()` looked the host up by stored
+  *identity* address only, so it returned `-ENODEV` for an RPA-connected macOS,
+  while `zmk_ble_profile_is_connected()` *did* resolve the RPA and answered
+  "connected". A stale conn object that nothing could tear down: `update_advertising()`
+  then computed `desired_adv = ZMK_ADV_NONE` and stayed dark **on purpose**, and the
+  keypress listener, `zmk_ble_totem_kick_open_adv()` and reconnect_watch all
+  short-circuited on "the active profile is connected".
+- `RPA_DISCONNECT` gives the disconnect the same IRK-aware conn lookup
+  (`totem_profile_conn`). Side effect: `BT_SEL` on the already-active profile now
+  really drops a live macOS link instead of silently failing.
+- `ADV_RECONCILE` stops trusting `advertising_status`. It could claim
+  `ZMK_ADV_CONN` while the controller was not advertising — and `update_advertising()`
+  cannot leave that state, because `desired == current` matches no `switch` case.
+  On user intent (keypress with the selected host down, or `BT_SEL`) it cancels the
+  throttle/retry work, clears the throttle, stops advertising accepting `-EALREADY`
+  (the only available "were we actually advertising?" probe), resets the status and
+  restarts. Rate-limited by `TOTEM_ADV_RECONCILE_COOLDOWN_MS` (restarting ads resets
+  the advertising interval, so per-keystroke reconciles would hurt discovery). A
+  keypress **never** disconnects anything; only the `BT_SEL` path may.
+- `CHECKED_OPEN_ADV` keeps its fail-soft `err = 0` but now records the real error in
+  `totem_adv_start_err`, so "the stack refuses to advertise" is distinguishable from
+  "the host is absent".
+- `RECOVERY_REBOOT` is the last resort, on objective evidence only: genuine
+  `bt_le_adv_start()` errors across the whole 25 × 400 ms budget *after* user
+  intent, or a conn still reporting connected `TOTEM_ZOMBIE_VERIFY_MS` after a
+  `BT_SEL` disconnect. Cold reboot of the central — bonds, profiles and settings in
+  NVS survive (same as `[ + Z` / `&sys_reset`, **not** a settings reset). Loop
+  breakers: `TOTEM_RECOVERY_REBOOT_MIN_UPTIME_SEC` floor, and any peripheral
+  disconnect cancels the zombie verify so a host that reconnects fast (macOS often
+  does, sometimes under an unresolved RPA) can never be mistaken for a wedged conn.
+- Reachability matters as much as the logic: `BT_SEL` now also lives on the **MOD
+  layer's left half** (`Tab`+`Z/X/C`, `Tab`+`D`/`V` for clear), so recovery does not
+  depend on the split link to the right half. See `config/totem.keymap`.
+
 **RPA-aware profile matching + open-adv retry** (always on with the throttle patch):
 
 - `zmk_ble_profile_index` maps a live RPA to a profile by matching against

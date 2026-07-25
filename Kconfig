@@ -290,3 +290,82 @@ config TOTEM_IDLE_DISCONNECT_MIN
 	int "Minutes without a keypress before the active host is disconnected"
 	depends on TOTEM_IDLE_DISCONNECT
 	default 20
+
+config TOTEM_RPA_DISCONNECT
+	bool "Find RPA-connected hosts when disconnecting a profile"
+	depends on ZMK_BLE
+	default y
+	help
+	  zmk_ble_prof_disconnect() looks the host up only by its stored *identity*
+	  address, which misses when the host is connected under a resolvable private
+	  address (macOS always is) and returns -ENODEV. Meanwhile
+	  zmk_ble_profile_is_connected() does resolve RPAs, so a stale conn object can
+	  look connected while nothing is able to tear it down: update_advertising()
+	  then stays dark on purpose, every recovery path skips, and repeated BT_SEL
+	  does nothing -- only a power cycle recovers (observed 2026-07-24, macOS away
+	  6 h). With this on, the disconnect falls back to the same IRK-aware conn
+	  lookup. Side effect: BT_SEL on the already-active profile now really drops a
+	  live macOS link instead of silently failing. Set n to restore the old
+	  identity-address-only behaviour. Implemented in patches/zmk-ble.patch.
+
+config TOTEM_ADV_RECONCILE
+	bool "Rebuild advertising state from scratch on explicit user intent"
+	depends on TOTEM_ADV_THROTTLE
+	default y
+	help
+	  A keypress while the selected host is down, or BT_SEL, means the user wants
+	  that host connected now. Instead of trusting advertising_status (which can
+	  claim ZMK_ADV_CONN while the controller is not advertising, a state
+	  update_advertising() cannot leave because desired == current matches no
+	  switch case), force the baseline: cancel throttle/retry work, clear the
+	  throttle, stop advertising accepting -EALREADY, reset the status, restart.
+	  Rate-limited by TOTEM_ADV_RECONCILE_COOLDOWN_MS so held or repeated keys
+	  cannot thrash the radio. Never disconnects a host on a keypress -- only the
+	  BT_SEL path may do that. Implemented in patches/zmk-ble.patch. Central-only.
+
+config TOTEM_ADV_RECONCILE_COOLDOWN_MS
+	int "Minimum milliseconds between keypress-driven advertising reconciles"
+	depends on TOTEM_ADV_RECONCILE
+	default 10000
+	range 1000 60000
+	help
+	  A reconcile restarts advertising, so doing it on every keystroke while the
+	  host is away would keep resetting the advertising interval and make the
+	  keyboard *harder* to discover. 10 s is well inside the couple of seconds a
+	  present host needs to connect once ads are actually running.
+
+config TOTEM_ZOMBIE_VERIFY_MS
+	int "Milliseconds to confirm a BT_SEL disconnect actually tore the link down"
+	depends on TOTEM_ADV_RECONCILE
+	default 2000
+	range 500 10000
+	help
+	  After BT_SEL asks the active host to disconnect, re-check whether the
+	  profile still reports connected. Still connected after this long means the
+	  conn object is wedged -- objective evidence for TOTEM_RECOVERY_REBOOT.
+
+config TOTEM_RECOVERY_REBOOT
+	bool "Reboot the central as last resort when BLE recovery cannot proceed"
+	depends on TOTEM_ADV_RECONCILE
+	select REBOOT
+	default y
+	help
+	  So the keyboard never needs its physical power switches to recover. Fires
+	  only on objective evidence, never merely because a host is absent: either
+	  bt_le_adv_start() returned genuine errors for the whole open-adv retry
+	  budget after the user asked for a reconnect, or the active profile still
+	  reported connected TOTEM_ZOMBIE_VERIFY_MS after a BT_SEL disconnect. Cold
+	  reboot only -- equivalent to &sys_reset, so bonds, profiles and settings in
+	  NVS all survive; this is NOT a settings reset. The peripheral half
+	  reconnects on its own. Implemented in patches/zmk-ble.patch. Central-only.
+
+config TOTEM_RECOVERY_REBOOT_MIN_UPTIME_SEC
+	int "Seconds after boot during which no automatic recovery reboot may fire"
+	depends on TOTEM_RECOVERY_REBOOT
+	default 60
+	range 10 600
+	help
+	  Loop breaker: recovery state does not survive a reboot, so without an
+	  uptime floor a permanently broken controller could reboot, be asked to
+	  recover again, and reboot forever. Below this uptime the reboot is
+	  suppressed and only logged.
