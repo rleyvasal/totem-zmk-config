@@ -37,6 +37,7 @@ jobs:
             "CONFIG_ZMK_SLEEP=n" \
             "CONFIG_TOTEM_EXCLUSIVE_HOST=y" \
             "CONFIG_TOTEM_LAZY_INACTIVE_HOST=n" \
+            "CONFIG_TOTEM_EVICT_REQUIRES_BONDED_ACTIVE=y" \
             "CONFIG_TOTEM_IDLE_DISCONNECT=n" \
             "CONFIG_TOTEM_ADV_POST_SWITCH_DARK=n"
           do
