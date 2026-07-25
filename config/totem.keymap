@@ -165,7 +165,13 @@
         adj_layer {
             bindings = <
                 &trans          &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &bt BT_CLR_ALL
-                &trans          &kp F4          &kp F5          &kp F6          &kp F11             &trans          &bt BT_SEL 3    &bt BT_SEL 4    &trans          &trans
+                // BT_SEL 3 / BT_SEL 4 removed 2026-07-25. Only three hosts are ever
+                // used, so those bindings did nothing but arm a trap: selecting an
+                // unpaired profile made exclusive host evict the only bonded computer
+                // on every connect attempt, with no automatic way back. The firmware
+                // guard (TOTEM_EVICT_REQUIRES_BONDED_ACTIVE) now survives that state;
+                // this removes the easiest way to reach it.
+                &trans          &kp F4          &kp F5          &kp F6          &kp F11             &trans          &trans          &trans          &trans          &trans
                 &sys_reset      &host_log_dump  &kp F1          &kp F2          &kp F3              &kp F10         &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &trans
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;

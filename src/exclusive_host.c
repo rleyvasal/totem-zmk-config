@@ -13,6 +13,13 @@
  * Windows showed a PIN then disconnected; macOS spun forever. Leave unknowns
  * alone; identity_resolved / security_changed will classify them.
  *
+ * ALSO NEVER DROPPED (TOTEM_EVICT_REQUIRES_BONDED_ACTIVE): any host, while the
+ * active profile itself has no bond. Exclusivity exists to protect the selected
+ * computer's link; with an empty profile selected there is nothing to protect, and
+ * evicting just rejects the one host that wants us. 2026-07-25: active=4 (never
+ * paired), macOS bonded at idx=0 -- connect/evict/retry at ~9 Hz until a BT_SEL
+ * broke it, which required a keyboard that by then only worked over USB.
+ *
  * Profile switch: immediate eviction of known non-active established links.
  * Central-only.
  *
@@ -190,6 +197,32 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     if (idx == active) {
         return;
     }
+
+#if IS_ENABLED(CONFIG_TOTEM_EVICT_REQUIRES_BONDED_ACTIVE)
+    /* The active profile has no bond, so there is no host for exclusivity to
+     * protect -- evicting here just rejects the only computer that wants us, and
+     * it retries forever. This is a trap with no automatic exit: every recovery
+     * path needs a BT_SEL, which needs a working keyboard. Seen 2026-07-25 with
+     * active=4 (empty) and macOS bonded at idx=0, looping at ~9 Hz. Prefer a
+     * connected wrong-profile host over an unusable keyboard; the user's own
+     * BT_SEL still evicts, because selecting a bonded profile clears this. */
+    if (zmk_ble_active_profile_is_open()) {
+        static int64_t last_skip_log_ms;
+        int64_t now = k_uptime_get();
+
+        /* The condition that triggers this also drives reconnect storms, so log
+         * at most once a window instead of once per connection attempt. */
+        if (last_skip_log_ms == 0 || (now - last_skip_log_ms) >= 10000) {
+            last_skip_log_ms = now;
+            LOG_WRN("totem_ble bg_evict_skip idx=%d active=%d: active profile unbonded, "
+                    "keeping host (press BT_SEL %d to select it)",
+                    idx, active, idx);
+            totem_host_event_log_record(TOTEM_HEVT_BG_EVICT, (int8_t)idx, (int8_t)active, 0,
+                                        (uint8_t)thrash_win_count(), 1);
+        }
+        return;
+    }
+#endif
 
     /* Known non-active profile: drop immediately (no L2 wait). force unused for
      * this path but kept for API compatibility with the delayed fallback. */

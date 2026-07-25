@@ -65,6 +65,22 @@ config TOTEM_EXCLUSIVE_DISCONNECT_REASON
 	  plain user-terminated disconnect; a different reason may make the host
 	  reconnect cleanly.
 
+config TOTEM_EVICT_REQUIRES_BONDED_ACTIVE
+	bool "Never evict a bonded host while the active profile is unbonded"
+	depends on TOTEM_EXCLUSIVE_HOST
+	default y
+	help
+	  Suppress background-host eviction whenever the active profile has no bond
+	  (zmk_ble_active_profile_is_open()). Without this, selecting an empty
+	  profile makes the keyboard reject the only computer that wants it, forever:
+	  the host connects, eviction fires on idx != active, the host retries, and
+	  the loop runs at several hertz until a BT_SEL rescues it. Observed
+	  2026-07-25 with active=4 and macOS bonded at idx=0 -- 16 evictions per 10 s
+	  window, macOS permanently greyed out, and the split slot table corrupted as
+	  collateral. Exclusivity only has a meaning to enforce when the selected
+	  profile actually has a host, so this costs nothing when one is paired.
+	  Implemented in src/exclusive_host.c. Central-only.
+
 config TOTEM_BOND_HEAL
 	bool "Auto-clear active profile bond after repeated auth failures"
 	depends on TOTEM_EXCLUSIVE_HOST
