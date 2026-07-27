@@ -1,3 +1,68 @@
+config TOTEM_WATCHDOG
+	bool "Hardware watchdog: reset the SoC if the firmware stops running"
+	select WATCHDOG
+	default n
+	help
+	  Arm the nRF52840 WDT and feed it from a lowest-priority thread. If the
+	  scheduler stops servicing that thread for TIMEOUT_MS the chip resets itself.
+	  This is the only recovery for the 2026-07-26 failure: the left half sat
+	  powered but not executing for five hours -- no USB enumeration, no
+	  advertising, no keypress handling -- with a charged battery and a working
+	  cable. Every other recovery path in this firmware is software, and software
+	  does not run on a stopped core (that includes TOTEM_RECOVERY_REBOOT, which
+	  calls sys_reboot). Bonds, profiles and settings live in NVS and survive a
+	  watchdog reset; it is equivalent to [ + Z, not a settings reset.
+	  NOTE: the nRF WDT cannot be stopped once started, and it keeps counting in
+	  SYSTEM ON sleep -- which is exactly what we need, since the hang looks like
+	  an idle CPU. Module src/totem_watchdog.c.
+
+config TOTEM_WATCHDOG_TIMEOUT_MS
+	int "Watchdog timeout in milliseconds"
+	depends on TOTEM_WATCHDOG
+	default 10000
+	range 2000 60000
+	help
+	  Time without a feed before the SoC resets. Fed every TIMEOUT/3, so two
+	  consecutive missed feeds are tolerated before the dog bites. 10 s is long
+	  enough that no normal stall (flash write, BLE storm, settings save) trips it
+	  and short enough that a real hang costs you a couple of seconds rather than
+	  five hours.
+
+config TOTEM_RESET_REASON_CAPTURE
+	bool "Record why the SoC last reset (power-on, watchdog, brownout, ...)"
+	select HWINFO
+	default y
+	help
+	  Read hwinfo_get_reset_cause() once at boot, print it via printk, and store a
+	  TOTEM_HEVT_BOOT record in the host event ring. Without this a watchdog reset
+	  is indistinguishable from someone bumping the reset button, and the 07-26
+	  incident showed that "what state was it in before it died" is the question we
+	  can never answer after the fact. Cheap: one read plus one ring entry per boot.
+	  Independent of TOTEM_WATCHDOG -- useful even with the watchdog off, since it
+	  also distinguishes brownouts from clean power-ons.
+
+config TOTEM_USB_CONSOLE
+	bool "USB CDC console on production builds (printk only, no log subsystem)"
+	select USB
+	select USB_DEVICE_STACK
+	select USB_CDC_ACM
+	select SERIAL
+	select CONSOLE
+	select UART_INTERRUPT_DRIVEN
+	select UART_LINE_CTRL
+	select UART_CONSOLE
+	select USB_UART_CONSOLE
+	default n
+	help
+	  Expose a USB serial console so &host_log_dump ([ + X) can actually print on a
+	  normal build. This is NOT the zmk-usb-logging snippet: that enables the full
+	  deferred logging subsystem with a log thread and per-message formatting, and
+	  is what was disabled in 3046d8f for hanging during profile switches. The dump
+	  path uses plain printk and needs only a console, so this gives you readable
+	  incident data at a fraction of the cost. Leaves CONFIG_LOG alone.
+	  Trade-off: adds a CDC ACM interface to the USB descriptor (the keyboard shows
+	  up as a composite device) and costs a little RAM. Set n if USB HID misbehaves.
+
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
 	depends on ZMK_BLE
