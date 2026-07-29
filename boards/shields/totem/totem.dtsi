@@ -11,29 +11,6 @@
     nfct-pins-as-gpios;
 };
 
-/*
- * External QSPI flash OFF (2026-07-28).
- *
- * The board file declares jedec-id [85 60 15] (Puya P25Q16H), but these XIAOs
- * answer [ef 40 15] -- a Winbond part. So qspi_nor fails to initialise on every
- * boot ("JEDEC id [ef 40 15] expect [85 60 15]") and the device is never ready.
- * The node declares has-dpd with enter/exit timings, but a driver that never
- * initialises never issues deep-power-down, so the chip sits drawing current
- * forever. On a keyboard cell that is the difference between days and weeks.
- *
- * ZMK does not use the external flash: settings and bonds live in the internal
- * NVS storage_partition at 0xec000, so switching this off costs nothing.
- *
- * Prompted by the right half dying after ~2 days: it typed while charging and
- * went unresponsive on battery, and the 88% that macOS reported was stale --
- * that level reaches the host through the split link, which was down.
- *
- * Revert by deleting this block if anything ever needs the external flash.
- */
-&qspi {
-    status = "disabled";
-};
-
 / {
     chosen {
         zmk,kscan = &kscan0;
