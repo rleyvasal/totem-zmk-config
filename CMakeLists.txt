@@ -3,7 +3,8 @@
 if(CONFIG_TOTEM_EXCLUSIVE_HOST OR CONFIG_TOTEM_LAZY_INACTIVE_HOST OR CONFIG_TOTEM_RECONNECT_WATCH
    OR CONFIG_TOTEM_HOST_EVENT_LOG OR CONFIG_TOTEM_WATCHDOG OR CONFIG_TOTEM_RESET_REASON_CAPTURE
    OR CONFIG_TOTEM_BOOT_PROFILE_DUMP OR CONFIG_TOTEM_FAULT_CAPTURE
-   OR CONFIG_TOTEM_ENDPOINT_LOG)
+   OR CONFIG_TOTEM_ENDPOINT_LOG
+   OR CONFIG_TOTEM_BATTERY_LOG)
   zephyr_library()
   zephyr_library_include_directories(${APPLICATION_SOURCE_DIR}/include)
   zephyr_library_include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
@@ -36,6 +37,10 @@ endif()
 # totem_fault_report_and_clear() at boot even when the watchdog itself is off.
 if(CONFIG_TOTEM_FAULT_CAPTURE OR CONFIG_TOTEM_WATCHDOG OR CONFIG_TOTEM_RESET_REASON_CAPTURE)
   zephyr_library_sources(src/totem_fault.c)
+endif()
+
+if(CONFIG_TOTEM_BATTERY_LOG)
+  zephyr_library_sources(src/totem_battery_log.c)
 endif()
 
 if(CONFIG_TOTEM_ENDPOINT_LOG)

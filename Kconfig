@@ -118,6 +118,34 @@ config TOTEM_ENDPOINT_LOG
 	  Central-only: a split peripheral has no HID endpoints, so
 	  zmk_endpoint_get_selected()/_preferred() are not linked into that build.
 
+config TOTEM_BATTERY_LOG
+	bool "printk both halves' battery level with timestamps"
+	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default y
+	help
+	  Print `totem_batt t=<uptime> left=NN%% right=NN%%` on every battery event and on
+	  a periodic tick. Host-side battery UIs cannot be trusted for measurement:
+	  lithium_ion_mv_to_pct() in zmk/app/src/battery.c returns 100 for anything at or
+	  above 4200 mV, so a half that is plugged into USB always reads ~100% regardless
+	  of real charge. That is why the right half showed 0%% and then 100%% the moment
+	  it was plugged in, and it means every reading taken while charging was noise.
+	  The half being measured must be on its own cell -- but the LEFT half may be on
+	  USB (that is where the console is) while the RIGHT half runs on battery, since
+	  the central receives the peripheral level over the split link.
+	  Needed to tell the ~2-day baseline drain from the 4-hour regression that
+	  0b1cbe4 caused, and to know whether any future drain fix actually did anything.
+	  Module src/totem_battery_log.c. Central-only.
+
+config TOTEM_BATTERY_LOG_INTERVAL_SEC
+	int "Seconds between battery log ticks"
+	depends on TOTEM_BATTERY_LOG
+	default 300
+	range 30 3600
+	help
+	  Events fire only on change and ZMK samples once a minute, so a slow drain gives
+	  long silences. The tick provides regular samples to fit a slope against. 300 s
+	  is ~50 samples across a 4-hour drain and ~575 across two days.
+
 config TOTEM_USB_CONSOLE
 	bool "USB CDC console on production builds (printk only, no log subsystem)"
 	select USB
