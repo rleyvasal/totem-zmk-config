@@ -1,3 +1,145 @@
+config TOTEM_FAULT_CAPTURE
+	bool "Record crashes (reason + faulting PC) across a reset"
+	select THREAD_NAME
+	default n
+	help
+	  Override k_sys_fatal_error_handler() to record the K_ERR_* reason, the faulting
+	  program counter and the running thread into a __noinit RAM struct, print it, and
+	  reboot. The next boot reports it via totem_fault_report_and_clear().
+	  This is the other half of the 2026-07-26 freeze investigation: the watchdog
+	  recovers the keyboard but cannot say why it stopped. A crash lands here with a
+	  PC that addr2line resolves to a source line against the matching zmk.elf; a hang
+	  never reaches it, so silence after a watchdog reset is itself the diagnosis.
+	  The record is magic+CRC protected because __noinit RAM survives a soft reset but
+	  is garbage after a power cut, and a garbage record read as a fault would be
+	  worse than no record at all.
+	  Module src/totem_fault.c. Keep the zmk.elf for whatever build you flashed, or a
+	  captured PC is just a number.
+
+config TOTEM_WATCHDOG
+	bool "Hardware watchdog: reset the SoC if the firmware stops running"
+	select WATCHDOG
+	select TASK_WDT
+	select TOTEM_FAULT_CAPTURE
+	default n
+	help
+	  Arm the nRF52840 WDT through Zephyr's task watchdog and feed it from three
+	  independent contexts, so a hang reports WHICH one stopped rather than just that
+	  the firmware died:
+	    sched    - lowest-priority thread (scheduler no longer runs normal threads)
+	    sysworkq - self-rescheduling delayed work (system workqueue wedged; the prime
+	               suspect, since most ZMK/BLE work runs there)
+	    timer    - k_timer expiry in ISR context (survives thread starvation, so
+	               "only timer fed" localises the fault to scheduling)
+	  The expiring channel is recorded via TOTEM_FAULT_CAPTURE and printed next boot.
+	  NOTE the callback runs in ISR context (task_wdt uses a k_timer), so it records
+	  to RAM and resets -- it cannot persist to flash.
+	  This is the only recovery for the 2026-07-26 failure: the left half sat
+	  powered but not executing for five hours -- no USB enumeration, no
+	  advertising, no keypress handling -- with a charged battery and a working
+	  cable. Every other recovery path in this firmware is software, and software
+	  does not run on a stopped core (that includes TOTEM_RECOVERY_REBOOT, which
+	  calls sys_reboot). Bonds, profiles and settings live in NVS and survive a
+	  watchdog reset; it is equivalent to [ + Z, not a settings reset.
+	  NOTE: the nRF WDT cannot be stopped once started, and it keeps counting in
+	  SYSTEM ON sleep -- which is exactly what we need, since the hang looks like
+	  an idle CPU. Module src/totem_watchdog.c.
+
+config TOTEM_WATCHDOG_TIMEOUT_MS
+	int "Watchdog timeout in milliseconds"
+	depends on TOTEM_WATCHDOG
+	default 10000
+	range 2000 60000
+	help
+	  Time without a feed before the SoC resets. Fed every TIMEOUT/3, so two
+	  consecutive missed feeds are tolerated before the dog bites. 10 s is long
+	  enough that no normal stall (flash write, BLE storm, settings save) trips it
+	  and short enough that a real hang costs you a couple of seconds rather than
+	  five hours.
+
+config TOTEM_RESET_REASON_CAPTURE
+	bool "Record why the SoC last reset (power-on, watchdog, brownout, ...)"
+	select HWINFO
+	default y
+	help
+	  Read hwinfo_get_reset_cause() once at boot, print it via printk, and store a
+	  TOTEM_HEVT_BOOT record in the host event ring. Without this a watchdog reset
+	  is indistinguishable from someone bumping the reset button, and the 07-26
+	  incident showed that "what state was it in before it died" is the question we
+	  can never answer after the fact. Cheap: one read plus one ring entry per boot.
+	  Independent of TOTEM_WATCHDOG -- useful even with the watchdog off, since it
+	  also distinguishes brownouts from clean power-ons.
+
+config TOTEM_BOOT_PROFILE_DUMP
+	bool "printk each profile's stored host address at boot"
+	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default y
+	help
+	  Print `totem_prof <n> <addr>` for every profile at boot, marking the active one
+	  with * and empty slots with EMPTY. This is the single most useful diagnostic we
+	  have: 2026-07-25 was an active profile that was never paired, and 2026-07-26 was
+	  profile 0 holding 00:00:00:00:00:00 while macOS still had its half of the bond.
+	  Both were answered by one line. ZMK already logs this as `Loaded ... address for
+	  profile N`, but that is a LOG_DBG and TOTEM_USB_CONSOLE leaves CONFIG_LOG off, so
+	  on a production image it does not exist -- answering the question meant reflashing
+	  to a debug build and destroying the state being investigated.
+	  Printed from delayed work, NOT from SYS_INIT: zmk_ble_init() only registers the
+	  settings handler, and settings_load() runs in ZMK's main() after every SYS_INIT
+	  level. Dumping at init prints all-zeroes on a keyboard with perfectly good bonds.
+	  Central-only: zmk_ble_profile_address() and zmk_ble_active_profile_index() are
+	  not linked into a peripheral build, so the right half must not select this.
+	  Implemented in src/totem_watchdog.c.
+
+config TOTEM_BOOT_PROFILE_DUMP_DELAY_MS
+	int "Delay before printing boot diagnostics (ms)"
+	depends on TOTEM_BOOT_PROFILE_DUMP || TOTEM_ENDPOINT_LOG
+	default 4000
+	range 500 30000
+	help
+	  Must outlast ZMK's main() reaching settings_load(); a few seconds also lets USB
+	  enumerate so the line is not printed into a console nobody has attached yet.
+
+config TOTEM_ENDPOINT_LOG
+	bool "printk the HID endpoint whenever it changes"
+	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default y
+	help
+	  Print `totem_ep changed selected=... preferred=...` on every endpoint change,
+	  plus once at boot. Which transport is carrying keystrokes is otherwise invisible
+	  -- typing looks identical over USB and BLE -- and it cannot be tested by
+	  elimination, because ZMK falls back: get_selected_transport() silently uses the
+	  other transport when the preferred one is not ready. So "forced BLE, turned
+	  Bluetooth off, still typing" proves nothing; BLE went not-ready and USB took
+	  over. Printing preferred AND selected makes that case explicit via a FALLBACK
+	  marker. Needed to verify the &out bindings do anything at all.
+	  Module src/totem_endpoint_log.c. Uses TOTEM_BOOT_PROFILE_DUMP_DELAY_MS for its
+	  boot report, since the preferred endpoint is restored by settings_load() in
+	  main(), after every SYS_INIT level.
+	  Central-only: a split peripheral has no HID endpoints, so
+	  zmk_endpoint_get_selected()/_preferred() are not linked into that build.
+
+config TOTEM_USB_CONSOLE
+	bool "USB CDC console on production builds (printk only, no log subsystem)"
+	select USB
+	select USB_DEVICE_STACK
+	select USB_CDC_ACM
+	select SERIAL
+	select CONSOLE
+	select UART_INTERRUPT_DRIVEN
+	select UART_LINE_CTRL
+	select UART_CONSOLE
+	select USB_UART_CONSOLE
+	default n
+	help
+	  Expose a USB serial console so &host_log_dump ([ + X) can actually print on a
+	  normal build. This is NOT the zmk-usb-logging snippet: that enables the full
+	  deferred logging subsystem with a log thread and per-message formatting, and
+	  is what was disabled in 3046d8f for hanging during profile switches. The dump
+	  path uses plain printk and needs only a console, so this gives you readable
+	  incident data at a fraction of the cost. Leaves CONFIG_LOG alone.
+	  Trade-off: adds a CDC ACM interface to the USB descriptor (the keyboard shows
+	  up as a composite device) and costs a little RAM. Set n if USB HID misbehaves.
+
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
 	depends on ZMK_BLE
@@ -306,3 +448,82 @@ config TOTEM_IDLE_DISCONNECT_MIN
 	int "Minutes without a keypress before the active host is disconnected"
 	depends on TOTEM_IDLE_DISCONNECT
 	default 20
+
+config TOTEM_RPA_DISCONNECT
+	bool "Find RPA-connected hosts when disconnecting a profile"
+	depends on ZMK_BLE
+	default y
+	help
+	  zmk_ble_prof_disconnect() looks the host up only by its stored *identity*
+	  address, which misses when the host is connected under a resolvable private
+	  address (macOS always is) and returns -ENODEV. Meanwhile
+	  zmk_ble_profile_is_connected() does resolve RPAs, so a stale conn object can
+	  look connected while nothing is able to tear it down: update_advertising()
+	  then stays dark on purpose, every recovery path skips, and repeated BT_SEL
+	  does nothing -- only a power cycle recovers (observed 2026-07-24, macOS away
+	  6 h). With this on, the disconnect falls back to the same IRK-aware conn
+	  lookup. Side effect: BT_SEL on the already-active profile now really drops a
+	  live macOS link instead of silently failing. Set n to restore the old
+	  identity-address-only behaviour. Implemented in patches/zmk-ble.patch.
+
+config TOTEM_ADV_RECONCILE
+	bool "Rebuild advertising state from scratch on explicit user intent"
+	depends on TOTEM_ADV_THROTTLE
+	default y
+	help
+	  A keypress while the selected host is down, or BT_SEL, means the user wants
+	  that host connected now. Instead of trusting advertising_status (which can
+	  claim ZMK_ADV_CONN while the controller is not advertising, a state
+	  update_advertising() cannot leave because desired == current matches no
+	  switch case), force the baseline: cancel throttle/retry work, clear the
+	  throttle, stop advertising accepting -EALREADY, reset the status, restart.
+	  Rate-limited by TOTEM_ADV_RECONCILE_COOLDOWN_MS so held or repeated keys
+	  cannot thrash the radio. Never disconnects a host on a keypress -- only the
+	  BT_SEL path may do that. Implemented in patches/zmk-ble.patch. Central-only.
+
+config TOTEM_ADV_RECONCILE_COOLDOWN_MS
+	int "Minimum milliseconds between keypress-driven advertising reconciles"
+	depends on TOTEM_ADV_RECONCILE
+	default 10000
+	range 1000 60000
+	help
+	  A reconcile restarts advertising, so doing it on every keystroke while the
+	  host is away would keep resetting the advertising interval and make the
+	  keyboard *harder* to discover. 10 s is well inside the couple of seconds a
+	  present host needs to connect once ads are actually running.
+
+config TOTEM_ZOMBIE_VERIFY_MS
+	int "Milliseconds to confirm a BT_SEL disconnect actually tore the link down"
+	depends on TOTEM_ADV_RECONCILE
+	default 2000
+	range 500 10000
+	help
+	  After BT_SEL asks the active host to disconnect, re-check whether the
+	  profile still reports connected. Still connected after this long means the
+	  conn object is wedged -- objective evidence for TOTEM_RECOVERY_REBOOT.
+
+config TOTEM_RECOVERY_REBOOT
+	bool "Reboot the central as last resort when BLE recovery cannot proceed"
+	depends on TOTEM_ADV_RECONCILE
+	select REBOOT
+	default y
+	help
+	  So the keyboard never needs its physical power switches to recover. Fires
+	  only on objective evidence, never merely because a host is absent: either
+	  bt_le_adv_start() returned genuine errors for the whole open-adv retry
+	  budget after the user asked for a reconnect, or the active profile still
+	  reported connected TOTEM_ZOMBIE_VERIFY_MS after a BT_SEL disconnect. Cold
+	  reboot only -- equivalent to &sys_reset, so bonds, profiles and settings in
+	  NVS all survive; this is NOT a settings reset. The peripheral half
+	  reconnects on its own. Implemented in patches/zmk-ble.patch. Central-only.
+
+config TOTEM_RECOVERY_REBOOT_MIN_UPTIME_SEC
+	int "Seconds after boot during which no automatic recovery reboot may fire"
+	depends on TOTEM_RECOVERY_REBOOT
+	default 60
+	range 10 600
+	help
+	  Loop breaker: recovery state does not survive a reboot, so without an
+	  uptime floor a permanently broken controller could reboot, be asked to
+	  recover again, and reboot forever. Below this uptime the reboot is
+	  suppressed and only logged.

@@ -30,6 +30,13 @@ enum totem_host_evt {
     TOTEM_HEVT_IDENTITY = 11,
     TOTEM_HEVT_CLASS_A_SUSPECT = 12,
     TOTEM_HEVT_THRASH_WIN = 13,
+    /* Boot record. `reason` carries the compressed reset cause (TOTEM_RR_* in
+     * src/totem_watchdog.c); idx/active are -1. A TOTEM_RR_WATCHDOG bit here means
+     * the previous boot ended in a hang the firmware could not recover from. */
+    TOTEM_HEVT_BOOT = 14,
+    /* Post-mortem from the previous boot (see totem_fault.h). `idx` is the task
+     * watchdog channel or -1, `reason` the K_ERR_* code, `extra` the fault kind. */
+    TOTEM_HEVT_FAULT = 15,
 };
 
 /**

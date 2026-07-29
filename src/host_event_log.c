@@ -107,6 +107,10 @@ static const char *evt_name(uint8_t type) {
         return "class_a";
     case TOTEM_HEVT_THRASH_WIN:
         return "thrash_win";
+    case TOTEM_HEVT_BOOT:
+        return "boot";
+    case TOTEM_HEVT_FAULT:
+        return "fault";
     default:
         return "unknown";
     }

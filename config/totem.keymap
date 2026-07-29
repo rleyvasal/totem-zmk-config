@@ -157,14 +157,30 @@
             bindings = <
                 &mac_lock       &win_lock       &trans          &trans          &trans              &kp C_PREV      &kp C_PP        &kp C_NEXT      &kp C_BRI_UP    &trans
                 &kp CAPS        &sk LALT        &sk LSHFT       &sk LCTRL       &trans              &kp BSPC        &kp DEL         &kp SPACE       &kp ENTER       &kp TAB
-                &trans          &trans          &trans          &trans          &trans              &trans          &kp C_VOL_DN    &kp C_MUTE      &kp C_VOL_UP    &kp C_BRI_DN    &trans          &trans
+                // LEFT-HALF-ONLY host selection (21-23). MOD is the left Tab thumb (34),
+                // so Tab+Z/X/C reach the central WITHOUT the split link -- the ADJ copies
+                // need the right-half Enter thumb, which is useless when the right half is
+                // dead, unpaired, or flat. That is the whole point of putting them here.
+                //
+                // Deliberately NO BT_CLR / BT_CLR_ALL on this row. c6da84f put them at
+                // Tab+D and Tab+V, two keys from Tab+Z, and on 2026-07-26 profiles 0 and 2
+                // were wiped while pressing recovery keys under stress -- the signature was
+                // unmistakable (only bonded profiles cleared, active forced to 0, which is
+                // exactly what zmk_ble_clear_all_bonds() does). Destructive, unconfirmed
+                // bindings do not belong next to the ones you reach for in a panic.
+                // Clearing a bond stays on ADJ; settings_reset covers the nuclear case.
+                &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &trans              &trans          &kp C_VOL_DN    &kp C_MUTE      &kp C_VOL_UP    &kp C_BRI_DN    &trans          &trans
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
 
         adj_layer {
             bindings = <
-                &trans          &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &bt BT_CLR_ALL
+                // BT_CLR_ALL removed 2026-07-28: it wipes every bond with no confirmation,
+                // and on 07-26 it cost profiles 0 and 2 mid-debugging. Nothing needs a
+                // single keystroke that destroys all pairings -- BT_CLR below clears one
+                // profile, and settings_reset.uf2 covers the nuclear case deliberately.
+                &trans          &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &trans
                 // BT_SEL 3 / BT_SEL 4 removed 2026-07-25. Only three hosts are ever
                 // used, so those bindings did nothing but arm a trap: selecting an
                 // unpaired profile made exclusive host evict the only bonded computer
