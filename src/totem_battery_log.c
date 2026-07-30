@@ -35,6 +35,35 @@
  * which look identical if you print an unsigned 0. */
 static int peripheral_soc = -1;
 
+/* Rate limit. The peripheral battery event can storm: a failing split read retries
+ * and each attempt raises an event, and 2026-07-30 produced ~22 in two seconds, all
+ * reporting 0%. Printing one line per event turns that into a burst of printk to a
+ * USB CDC console -- slow I/O on the event path, so the diagnostic starts causing the
+ * latency it is supposed to measure. Ticks and boot always print; event-driven lines
+ * print at most once a second, and repeats of an unchanged value are dropped. */
+#define BATT_EVENT_MIN_INTERVAL_MS 1000
+
+static int64_t last_event_print_ms;
+static int last_printed_local = -1;
+static int last_printed_periph = -2;
+
+static bool batt_event_should_print(void) {
+    int local = zmk_battery_state_of_charge();
+    int64_t now = k_uptime_get();
+
+    if (local == last_printed_local && peripheral_soc == last_printed_periph) {
+        return false;
+    }
+    if (last_event_print_ms != 0 && (now - last_event_print_ms) < BATT_EVENT_MIN_INTERVAL_MS) {
+        return false;
+    }
+
+    last_event_print_ms = now;
+    last_printed_local = local;
+    last_printed_periph = peripheral_soc;
+    return true;
+}
+
 static void totem_batt_print(const char *why) {
     uint32_t up_s = k_uptime_get_32() / 1000;
 
@@ -53,11 +82,13 @@ static int totem_batt_listener(const zmk_event_t *eh) {
 
     if (pev != NULL) {
         peripheral_soc = pev->state_of_charge;
-        totem_batt_print("periph");
+        if (batt_event_should_print()) {
+            totem_batt_print("periph");
+        }
         return ZMK_EV_EVENT_BUBBLE;
     }
 
-    if (as_zmk_battery_state_changed(eh) != NULL) {
+    if (as_zmk_battery_state_changed(eh) != NULL && batt_event_should_print()) {
         totem_batt_print("local");
     }
 
@@ -69,6 +100,8 @@ ZMK_SUBSCRIPTION(totem_battery_log, zmk_battery_state_changed);
 ZMK_SUBSCRIPTION(totem_battery_log, zmk_peripheral_battery_state_changed);
 
 static void totem_batt_tick_handler(struct k_work *work) {
+    /* Deliberately bypasses the rate limit: the tick IS the measurement, and a flat
+     * battery over a quiet hour must still produce samples. */
     totem_batt_print("tick");
     k_work_reschedule(k_work_delayable_from_work(work),
                       K_SECONDS(CONFIG_TOTEM_BATTERY_LOG_INTERVAL_SEC));
