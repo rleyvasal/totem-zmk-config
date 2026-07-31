@@ -32,9 +32,23 @@
          * stuck modifier. BT_SEL does the same, so Tab+Z is the one-key recovery.
          *
          * 280 ms gives a delayed release ~100 ms more room to still count as a tap.
-         * If misfires persist, the stronger fix is `hold-trigger-on-release`, which
-         * defers the decision to the release event instead of a timer -- try that
-         * before chasing the transport further.
+         *
+         * 2026-07-30, second attempt: 280 ms was NOT enough -- ALT still latched
+         * (observed unambiguously: macOS dictation is bound to an Alt hold, and it
+         * fired mid-typing for about a second). Adding hold-trigger-on-release.
+         *
+         * That changes the decision from a TIMER to an EVENT. Without it the hold
+         * fires as soon as an opposite-hand key is seen while this key is still
+         * down -- and across a split, "still down" means "its release has not
+         * arrived yet", which is exactly what a delayed release looks like. With
+         * it, the hold is only considered once the OTHER key is RELEASED, so a late
+         * release is still a release rather than a timeout. Transport delay stops
+         * being able to manufacture a hold.
+         *
+         * Cost: a rolling chord like "sh" that used to fire a mod on the way down
+         * now waits for the release, so intentional mods feel slightly later. That
+         * is the intended trade -- a missed mod costs one keystroke, a latched mod
+         * costs everything typed until it clears.
          */
         hml: homerow_mods_left {
             compatible = "zmk,behavior-hold-tap";
@@ -46,6 +60,7 @@
             bindings = <&kp>, <&kp>;
             // only fire the mod when chorded with an opposite-hand (right) key
             hold-trigger-key-positions = <5 6 7 8 9 15 16 17 18 19 26 27 28 29 30 31 35 36 37>;
+            hold-trigger-on-release;
         };
         
         /* Same reasoning as hml above -- and this is the one that produced the
@@ -60,6 +75,7 @@
             bindings = <&kp>, <&kp>;
             // only fire the mod when chorded with an opposite-hand (left) key
             hold-trigger-key-positions = <0 1 2 3 4 10 11 12 13 14 20 21 22 23 24 25 32 33 34>;
+            hold-trigger-on-release;
         };
         
         td_bs_pipe: backslash_pipe {
