@@ -11,10 +11,35 @@
 
 / {
     behaviors {
+        /*
+         * tapping-term-ms 200 -> 280 (2026-07-30).
+         *
+         * A hold-tap decides "hold" when the key is still down at the end of the
+         * term. Across a split, that decision uses when the RELEASE ARRIVES, not
+         * when the key was physically released -- and the release crosses the BLE
+         * link. The right half was caught scanning `i` (&hmr RALT I) with press and
+         * release only 78 ms apart, comfortably a tap, while ALT latched on anyway:
+         * the release reached the central late and the term had already expired.
+         *
+         * A latched modifier then turns every following key into Alt+key, which
+         * produces nothing visible. That is what "the right half stopped typing"
+         * has been all along -- the right half is fine (4208 scans -> 4208 position
+         * events -> 4208 split sends, every press matched by a release, measured
+         * during a reported outage) and the central relays in 0 ms median.
+         *
+         * It also explains why plugging in USB "fixed" it without a reboot: an
+         * endpoint change calls zmk_endpoint_clear_reports(), which releases the
+         * stuck modifier. BT_SEL does the same, so Tab+Z is the one-key recovery.
+         *
+         * 280 ms gives a delayed release ~100 ms more room to still count as a tap.
+         * If misfires persist, the stronger fix is `hold-trigger-on-release`, which
+         * defers the decision to the release event instead of a timer -- try that
+         * before chasing the transport further.
+         */
         hml: homerow_mods_left {
             compatible = "zmk,behavior-hold-tap";
             #binding-cells = <2>;
-            tapping-term-ms = <200>;
+            tapping-term-ms = <280>;
             quick-tap-ms = <175>;
             require-prior-idle-ms = <150>;
             flavor = "balanced";
@@ -23,10 +48,12 @@
             hold-trigger-key-positions = <5 6 7 8 9 15 16 17 18 19 26 27 28 29 30 31 35 36 37>;
         };
         
+        /* Same reasoning as hml above -- and this is the one that produced the
+         * reported symptom, since `i` is &hmr RALT I. */
         hmr: homerow_mods_right {
             compatible = "zmk,behavior-hold-tap";
             #binding-cells = <2>;
-            tapping-term-ms = <200>;
+            tapping-term-ms = <280>;
             quick-tap-ms = <175>;
             require-prior-idle-ms = <150>;
             flavor = "balanced";
