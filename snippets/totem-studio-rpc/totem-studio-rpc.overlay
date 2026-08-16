@@ -1,0 +1,26 @@
+/*
+ * One CDC only: the Studio RPC uart.
+ *
+ * The XIAO BLE board adds board_cdc_acm_uart, and totem_left.overlay adds
+ * totem_console_uart. Together with this RPC node that is three Totem Home
+ * serial ports. Disable the two consoles so zmk.studio has a single target.
+ */
+/ {
+    chosen {
+        zmk,studio-rpc-uart = &snippet_studio_rpc_usb_uart;
+    };
+};
+
+&zephyr_udc0 {
+    snippet_studio_rpc_usb_uart: snippet_studio_rpc_usb_uart {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+&totem_console_uart {
+    status = "disabled";
+};
+
+&board_cdc_acm_uart {
+    status = "disabled";
+};

@@ -18,12 +18,11 @@ include:
   # daily-driver left UF2; do not settings-reset; keep the known-good left UF2
   # to roll back.
   #
-  # USB console is OFF on this target. Official Studio expects a single CDC
-  # (the RPC uart from studio-rpc-usb-uart). Sharing that with TOTEM_USB_CONSOLE
-  # enumerates multiple Totem Home serial ports; printk lives on one of them
-  # and Studio's handshake fails on the others.
+  # Studio RPC only. Local snippet totem-studio-rpc (not upstream
+  # studio-rpc-usb-uart) so the XIAO board CDC and our printk console
+  # are disabled. Flash totem_left_studio, not totem_left.
   - board: xiao_ble//zmk
     shield: totem_left
-    snippet: studio-rpc-usb-uart
+    snippet: totem-studio-rpc
     cmake-args: -DCONFIG_ZMK_STUDIO=y
     artifact-name: totem_left_studio

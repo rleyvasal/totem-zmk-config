@@ -19,15 +19,11 @@
 /*
  * USB CDC console for the left (central) half -- see CONFIG_TOTEM_USB_CONSOLE.
  *
- * On a normal left build this is the printk console. It is omitted when
- * CONFIG_ZMK_STUDIO=y: the studio-rpc-usb-uart snippet already selects
- * USB_CDC_ACM, so an unconditional node here becomes a second (or third)
- * Totem Home serial port and Studio's handshake fails. cmake-args cannot
- * turn TOTEM_USB_CONSOLE off because totem.conf sets it y.
- *
- * zmk-usb-logging still adds its own CDC and wins the chosen console.
+ * Declared unconditionally. On a Studio build the totem-studio-rpc snippet
+ * sets status="disabled" on this node (and on the XIAO board CDC) so only
+ * the RPC uart enumerates. #ifdef CONFIG_ZMK_STUDIO in this file does not
+ * work: shield overlays are preprocessed without that cmake-args symbol.
  */
-#ifndef CONFIG_ZMK_STUDIO
 &zephyr_udc0 {
     totem_console_uart: totem_console_uart {
         compatible = "zephyr,cdc-acm-uart";
@@ -39,4 +35,3 @@
         zephyr,console = &totem_console_uart;
     };
 };
-#endif
