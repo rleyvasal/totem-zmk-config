@@ -13,3 +13,12 @@ include:
     shield: totem_left
     snippet: zmk-usb-logging
     artifact-name: totem_left_logging
+  # Diagnostic build: left/central only, ZMK Studio RPC over USB.
+  # Production totem_left stays CONFIG_ZMK_STUDIO=n. Flash this instead of the
+  # daily-driver left UF2; do not settings-reset; keep the known-good left UF2
+  # to roll back. Expect two cu.usbmodem* nodes (console + Studio RPC).
+  - board: xiao_ble//zmk
+    shield: totem_left
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y
+    artifact-name: totem_left_studio
