@@ -19,3 +19,28 @@
         , <&xiao_d 4 GPIO_ACTIVE_HIGH>
         ;
 };
+
+/*
+ * USB CDC console for the RIGHT (peripheral) half.
+ *
+ * Added 2026-07-30 when the right half looked like the fault. Later the same day,
+ * simultaneous logs on both halves showed the split link dying (HCI reason 8,
+ * CONN_TIMEOUT) and coming back ~3.5 s later -- the right half was fine; the air
+ * hop was not. TX +8 dBm is the lever that followed. Keep the console anyway:
+ * the next split-link question still needs a peripheral-side timestamp.
+ *
+ * Mirrors the block in totem_left.overlay. Declared unconditionally, which is safe:
+ * with TOTEM_USB_CONSOLE=n nothing selects USB_CDC_ACM, so no driver is built, no
+ * interface is added to the USB descriptor, and the chosen console is never read.
+ */
+&zephyr_udc0 {
+    totem_right_console_uart: totem_right_console_uart {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+/ {
+    chosen {
+        zephyr,console = &totem_right_console_uart;
+    };
+};

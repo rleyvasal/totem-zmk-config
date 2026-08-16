@@ -11,28 +11,71 @@
 
 / {
     behaviors {
+        /*
+         * tapping-term-ms 200 -> 280 (2026-07-30).
+         *
+         * A hold-tap decides "hold" when the key is still down at the end of the
+         * term. Across a split, that decision uses when the RELEASE ARRIVES, not
+         * when the key was physically released -- and the release crosses the BLE
+         * link. The right half was caught scanning `i` (&hmr RALT I) with press and
+         * release only 78 ms apart, comfortably a tap, while ALT latched on anyway:
+         * the release reached the central late and the term had already expired.
+         *
+         * A latched modifier then turns every following key into Alt+key, which
+         * produces nothing visible. That is what "the right half stopped typing"
+         * has been all along -- the right half is fine (4208 scans -> 4208 position
+         * events -> 4208 split sends, every press matched by a release, measured
+         * during a reported outage) and the central relays in 0 ms median.
+         *
+         * It also explains why plugging in USB "fixed" it without a reboot: an
+         * endpoint change calls zmk_endpoint_clear_reports(), which releases the
+         * stuck modifier. BT_SEL does the same, so Tab+Z is the one-key recovery.
+         *
+         * 280 ms gives a delayed release ~100 ms more room to still count as a tap.
+         *
+         * 2026-07-30, second attempt: 280 ms was NOT enough -- ALT still latched
+         * (observed unambiguously: macOS dictation is bound to an Alt hold, and it
+         * fired mid-typing for about a second). Adding hold-trigger-on-release.
+         *
+         * That changes the decision from a TIMER to an EVENT. Without it the hold
+         * fires as soon as an opposite-hand key is seen while this key is still
+         * down -- and across a split, "still down" means "its release has not
+         * arrived yet", which is exactly what a delayed release looks like. With
+         * it, the hold is only considered once the OTHER key is RELEASED, so a late
+         * release is still a release rather than a timeout. Transport delay stops
+         * being able to manufacture a hold.
+         *
+         * Cost: a rolling chord like "sh" that used to fire a mod on the way down
+         * now waits for the release, so intentional mods feel slightly later. That
+         * is the intended trade -- a missed mod costs one keystroke, a latched mod
+         * costs everything typed until it clears.
+         */
         hml: homerow_mods_left {
             compatible = "zmk,behavior-hold-tap";
             #binding-cells = <2>;
-            tapping-term-ms = <200>;
+            tapping-term-ms = <280>;
             quick-tap-ms = <175>;
             require-prior-idle-ms = <150>;
             flavor = "balanced";
             bindings = <&kp>, <&kp>;
             // only fire the mod when chorded with an opposite-hand (right) key
             hold-trigger-key-positions = <5 6 7 8 9 15 16 17 18 19 26 27 28 29 30 31 35 36 37>;
+            hold-trigger-on-release;
         };
         
+        /* Same reasoning as hml above -- and this is the one that produced the
+         * reported symptom, since `i` is &hmr RALT I. */
         hmr: homerow_mods_right {
             compatible = "zmk,behavior-hold-tap";
             #binding-cells = <2>;
-            tapping-term-ms = <200>;
+            tapping-term-ms = <280>;
             quick-tap-ms = <175>;
             require-prior-idle-ms = <150>;
             flavor = "balanced";
             bindings = <&kp>, <&kp>;
             // only fire the mod when chorded with an opposite-hand (left) key
             hold-trigger-key-positions = <0 1 2 3 4 10 11 12 13 14 20 21 22 23 24 25 32 33 34>;
+            hold-trigger-on-release;
         };
         
         td_bs_pipe: backslash_pipe {
@@ -157,17 +200,30 @@
             bindings = <
                 &mac_lock       &win_lock       &trans          &trans          &trans              &kp C_PREV      &kp C_PP        &kp C_NEXT      &kp C_BRI_UP    &trans
                 &kp CAPS        &sk LALT        &sk LSHFT       &sk LCTRL       &trans              &kp BSPC        &kp DEL         &kp SPACE       &kp ENTER       &kp TAB
-                // LEFT-HALF-ONLY BT controls (21-25). MOD is the left Tab thumb (34), so
-                // these reach the central without the split link -- unlike the ADJ copies,
-                // which need the right-half Enter thumb (35) plus right-half keys.
-                &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &bt BT_CLR_ALL      &kp C_VOL_DN    &kp C_MUTE      &kp C_VOL_UP    &kp C_BRI_DN    &trans          &trans
+                // LEFT-HALF-ONLY host selection (21-23). MOD is the left Tab thumb (34),
+                // so Tab+Z/X/C reach the central WITHOUT the split link -- the ADJ copies
+                // need the right-half Enter thumb, which is useless when the right half is
+                // dead, unpaired, or flat. That is the whole point of putting them here.
+                //
+                // Deliberately NO BT_CLR / BT_CLR_ALL on this row. c6da84f put them at
+                // Tab+D and Tab+V, two keys from Tab+Z, and on 2026-07-26 profiles 0 and 2
+                // were wiped while pressing recovery keys under stress -- the signature was
+                // unmistakable (only bonded profiles cleared, active forced to 0, which is
+                // exactly what zmk_ble_clear_all_bonds() does). Destructive, unconfirmed
+                // bindings do not belong next to the ones you reach for in a panic.
+                // Clearing a bond stays on ADJ; settings_reset covers the nuclear case.
+                &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &trans              &trans          &kp C_VOL_DN    &kp C_MUTE      &kp C_VOL_UP    &kp C_BRI_DN    &trans          &trans
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
 
         adj_layer {
             bindings = <
-                &trans          &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &bt BT_CLR_ALL
+                // BT_CLR_ALL removed 2026-07-28: it wipes every bond with no confirmation,
+                // and on 07-26 it cost profiles 0 and 2 mid-debugging. Nothing needs a
+                // single keystroke that destroys all pairings -- BT_CLR below clears one
+                // profile, and settings_reset.uf2 covers the nuclear case deliberately.
+                &trans          &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &trans
                 // BT_SEL 3 / BT_SEL 4 removed 2026-07-25. Only three hosts are ever
                 // used, so those bindings did nothing but arm a trap: selecting an
                 // unpaired profile made exclusive host evict the only bonded computer
