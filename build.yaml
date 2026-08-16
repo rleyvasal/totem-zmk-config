@@ -24,5 +24,5 @@ include:
   - board: xiao_ble//zmk
     shield: totem_left
     snippet: totem-studio-rpc
-    cmake-args: -DCONFIG_ZMK_STUDIO=y
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n
     artifact-name: totem_left_studio
