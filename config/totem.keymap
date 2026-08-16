@@ -158,21 +158,11 @@
         };
 
 #ifdef CONFIG_ZMK_STUDIO
-        // Studio UART RPC only listens when the selected HID endpoint is USB
-        // (zmk/app/src/studio/rpc.c refresh_selected_transport). If the Mac is
-        // on BLE, Chrome can open the CDC port and still get no RPC reply.
-        // Esc + BSPC (left thumbs 32+33) forces USB output first.
-        combo_studio_usb_out {
-            timeout-ms = <80>;
-            key-positions = <32 33>;
-            bindings = <&out OUT_USB>;
-        };
-
-        // Left-half-ONLY Studio unlock: outer ESC thumb (32) + Tab thumb (34).
-        // After Studio is connected. Away from [+Z, [+X, and BT_CLR.
+        // Two plain &kp keys. Esc+Tab used the MOD layer-tap thumb, so the
+        // combo often missed and Chrome just saw Esc/Tab. Q+B are both &kp.
         combo_studio_unlock {
             timeout-ms = <80>;
-            key-positions = <32 34>;
+            key-positions = <0 4>;
             bindings = <&studio_unlock>;
         };
 #endif
