@@ -72,6 +72,14 @@ Function keys and Bluetooth profile select / clear. (No Studio unlock — Studio
 
 ![Totem Keymap](totem-keymap.svg)
 
+Visual editor (drag A–Z onto the real Totem geometry, download a patched `.keymap`):
+
+```bash
+python3 editor/serve.py
+```
+
+Then open http://127.0.0.1:8765/editor/ — see `editor/README.md`.
+
 ## Installation
 
 1. Fork this repository  
