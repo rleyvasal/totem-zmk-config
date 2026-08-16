@@ -66,8 +66,8 @@ gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
   and the accept list contains **only** that profile's peer. Background bonded
   hosts cannot complete a connection (primary multi-host thrash isolation).
   Open/empty profile → unfiltered ads for pairing. Fail-open: FAL setup/start
-  failure → unfiltered open advertising. Enabled in `totem.conf` (2026-07-21);
-  set `=n` if advertising vanishes on your hardware.
+  failure → unfiltered open advertising. **Off** after the 2026-07-21 field
+  fail (Mac return broken). Leave `CONFIG_TOTEM_ACTIVE_ADV_FILTER=n`.
 
 **Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
 

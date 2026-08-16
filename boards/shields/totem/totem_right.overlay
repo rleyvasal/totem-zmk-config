@@ -21,22 +21,17 @@
 };
 
 /*
- * USB CDC console for the RIGHT (peripheral) half -- added 2026-07-30.
+ * USB CDC console for the RIGHT (peripheral) half.
  *
- * The right half has been the one place with no visibility at all, and the fault is
- * now definitively there. On 07-30 it went silent for 22 s while the split link
- * stayed up: zero split_central_disconnected across 2.1 MB of central-side debug
- * output, and 22 s comfortably exceeds the 15 s supervision timeout
- * (ZMK_SPLIT_BLE_PREF_TIMEOUT=1500). So its radio was answering connection events
- * throughout while its key path sent nothing -- a peripheral-side stall, not power.
- * A brownout would have killed the radio first and produced a disconnect.
+ * Added 2026-07-30 when the right half looked like the fault. Later the same day,
+ * simultaneous logs on both halves showed the split link dying (HCI reason 8,
+ * CONN_TIMEOUT) and coming back ~3.5 s later -- the right half was fine; the air
+ * hop was not. TX +8 dBm is the lever that followed. Keep the console anyway:
+ * the next split-link question still needs a peripheral-side timestamp.
  *
  * Mirrors the block in totem_left.overlay. Declared unconditionally, which is safe:
  * with TOTEM_USB_CONSOLE=n nothing selects USB_CDC_ACM, so no driver is built, no
  * interface is added to the USB descriptor, and the chosen console is never read.
- *
- * Running this half on USB to read it is acceptable now: power was ruled out by the
- * evidence above, so USB no longer masks the variable under test.
  */
 &zephyr_udc0 {
     totem_right_console_uart: totem_right_console_uart {

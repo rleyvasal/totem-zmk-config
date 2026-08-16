@@ -8,7 +8,7 @@ Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/t
 - **Wake from sleep** — the selected BLE link stays connected through keyboard idle so a key can wake a supported host
 - **Battery saving** — advertising stops after five minutes when the selected host is genuinely absent
 - **Faster profile switch** — dense advertising boost after `&bt BT_SEL`
-- **Dual battery monitoring** — reports both halves to the host
+- **Split-link reliability** — 15 ms connection interval, 4 s supervision, +8 dBm TX; homerow mods decide on release so a delayed split hop cannot latch a modifier
 - **Colemak-DH** layout with homerow mods, mouse layer, and combos
 - **ZMK Studio** — **disabled** (`CONFIG_ZMK_STUDIO=n`); re-enable in `config/totem.conf` if you want live keymap editing
 
@@ -33,13 +33,14 @@ On the ADJ layer, press the target profile’s `&bt BT_SEL`. Exclusive-host disc
 
 **Wake behavior:** The selected host remains connected while the keyboard is idle, allowing a keypress to wake hosts whose Bluetooth radio is armed for wake. The inactive host is disconnected. If the selected computer powers down its Bluetooth radio during sleep, no disconnected keyboard can guarantee wake until that computer scans and reconnects.
 
-**Host event log (multi-profile):** production firmware records BLE host events for **any** profile into an on-keyboard ring (settings-backed). After an incident, plug the left half over USB and dump with **`[` + `X`** (or ADJ → dump key next to reset). Use a USB serial console (`totem_left_logging` briefly without settings-reset, or temporary `CONFIG_ZMK_USB_LOGGING`). Do **not** stay on the logging image while testing profile switches.
+**Host event log:** **off** on the production image (flash writes were a hang suspect). The `[` + `X` combo is a no-op until `CONFIG_TOTEM_HOST_EVENT_LOG=y`. Prefer the USB console boot lines (`Loaded … address`, `active=`) on a `totem_left_logging` flash if you need a dump; do **not** stay on the logging image while testing profile switches.
 
-**Active-host isolation (FAL):** **off by default** after field failure (Mac→Win OK, return to Mac broken). Code remains in the fork for experiments; do not enable `CONFIG_TOTEM_ACTIVE_ADV_FILTER` until Mac↔Win↔Mac is proven.
+**Active-host isolation (FAL):** **off.** Field failure 2026-07-21 (Mac→Win OK, return to Mac broken). Exclusive-host eviction is the dual-host policy that survived a week of daily use. Do not enable `CONFIG_TOTEM_ACTIVE_ADV_FILTER` until Mac↔Win↔Mac is proven.
 
 ### Tuning timers (after a week of real use)
 
-Defaults in `config/totem.conf` — change only after you’ve lived with them:
+Defaults in `config/totem.conf` — change only after you’ve lived with them. The
+2026-08-15 baseline already includes a week of daily use; see `STABLE-BASELINE.md`.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -48,6 +49,7 @@ Defaults in `config/totem.conf` — change only after you’ve lived with them:
 
 - A keypress after advertising has throttled resumes advertising; that first key may be lost while reconnecting.
 - Windows reconnect is often slower than macOS (host stack); firmware boost helps discovery only.
+- Battery is about **3 days** of daily use at +8 dBm / 15 ms split (Tuesday 100% → Friday 0%, week of 2026-08-11). That is the accepted cost of the split-link fix. Step TX down only after another clean week, and measure.
 
 ## Layers
 
