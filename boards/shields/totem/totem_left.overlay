@@ -19,19 +19,15 @@
 /*
  * USB CDC console for the left (central) half -- see CONFIG_TOTEM_USB_CONSOLE.
  *
- * Declared unconditionally, which is safe: with TOTEM_USB_CONSOLE=n nothing selects
- * USB_CDC_ACM, so no driver is built for this node, no interface is added to the USB
- * descriptor, and the chosen console is never read. Turning the Kconfig on is the
- * only thing that makes it real.
+ * On a normal left build this is the printk console. It is omitted when
+ * CONFIG_ZMK_STUDIO=y: the studio-rpc-usb-uart snippet already selects
+ * USB_CDC_ACM, so an unconditional node here becomes a second (or third)
+ * Totem Home serial port and Studio's handshake fails. cmake-args cannot
+ * turn TOTEM_USB_CONSOLE off because totem.conf sets it y.
  *
- * This exists so &host_log_dump ([ + X) can print on a NORMAL build. It deliberately
- * does not touch CONFIG_LOG -- the deferred logging subsystem is the part that was
- * disabled in 3046d8f for hanging profile switches, and printk needs only a console.
- *
- * Note: on a zmk-usb-logging build the snippet declares its own CDC node and wins the
- * chosen console, so the board enumerates TWO cu.usbmodem* devices. Only one carries
- * the stream; try both.
+ * zmk-usb-logging still adds its own CDC and wins the chosen console.
  */
+#ifndef CONFIG_ZMK_STUDIO
 &zephyr_udc0 {
     totem_console_uart: totem_console_uart {
         compatible = "zephyr,cdc-acm-uart";
@@ -43,3 +39,4 @@
         zephyr,console = &totem_console_uart;
     };
 };
+#endif
