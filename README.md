@@ -10,7 +10,7 @@ Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/t
 - **Faster profile switch** — dense advertising boost after `&bt BT_SEL`
 - **Split-link reliability** — 15 ms connection interval, 4 s supervision, +8 dBm TX; homerow mods decide on release so a delayed split hop cannot latch a modifier
 - **Colemak-DH** layout with homerow mods, mouse layer, and combos
-- **ZMK Studio** — **disabled** (`CONFIG_ZMK_STUDIO=n`); re-enable in `config/totem.conf` if you want live keymap editing
+- **ZMK Studio** — **on** for the production left image (`totem-studio-rpc` snippet, unlocked). Do not only flip `CONFIG_ZMK_STUDIO=y` in `totem.conf`: that misses the RPC uart and stacks extra CDCs. Connect [zmk.studio](https://zmk.studio/) over USB to **`cu.usbmodem104`** (silent RPC). `101` is printk. Mac Bluetooth can stay on; the left half prefers USB HID while the cable is in.
 
 ## Dual computer + battery (overview)
 
