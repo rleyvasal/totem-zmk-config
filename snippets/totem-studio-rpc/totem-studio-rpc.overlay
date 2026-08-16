@@ -1,0 +1,24 @@
+/*
+ * Studio RPC uart plus the XIAO board CDC (printk / shell).
+ *
+ * Do not disable board_cdc_acm_uart: CONFIG_UART_CONSOLE still compiles
+ * uart_console.c against DT_CHOSEN(zephyr_console). Point that chosen
+ * at the board CDC and drop our extra totem_console_uart so we get two
+ * ports (console + RPC), not three, and the image still links.
+ */
+/ {
+    chosen {
+        zmk,studio-rpc-uart = &snippet_studio_rpc_usb_uart;
+        zephyr,console = &board_cdc_acm_uart;
+    };
+};
+
+&zephyr_udc0 {
+    snippet_studio_rpc_usb_uart: snippet_studio_rpc_usb_uart {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+&totem_console_uart {
+    status = "disabled";
+};

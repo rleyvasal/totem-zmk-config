@@ -1,6 +1,18 @@
+/*
+ * Studio snippet defines ZMK_BEHAVIORS_KEEP_ALL, which compiles every unused
+ * stock behavior and is how an nRF52840 with a USB console runs out of RAM.
+ * Undefining it restores the normal rule: only behaviors the keymap (or an
+ * explicit KEEP_*) references are built. Harmless on non-Studio images.
+ */
+#undef ZMK_BEHAVIORS_KEEP_ALL
+/* Useful in the Studio palette even if the compiled keymap never binds them. */
+#define ZMK_BEHAVIORS_KEEP_NONE
+#define ZMK_BEHAVIORS_KEEP_OUT
+
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/bt.h>
+#include <dt-bindings/zmk/outputs.h>
 #include <dt-bindings/zmk/pointing.h>
 
 #define BASE 0
@@ -144,6 +156,16 @@
             key-positions = <20 22>;
             bindings = <&host_log_dump>;
         };
+
+#ifdef CONFIG_ZMK_STUDIO
+        // Two plain &kp keys. Esc+Tab used the MOD layer-tap thumb, so the
+        // combo often missed and Chrome just saw Esc/Tab. Q+B are both &kp.
+        combo_studio_unlock {
+            timeout-ms = <80>;
+            key-positions = <0 4>;
+            bindings = <&studio_unlock>;
+        };
+#endif
     };
 
     macros {

@@ -148,6 +148,7 @@ config TOTEM_BATTERY_LOG_INTERVAL_SEC
 
 config TOTEM_USB_CONSOLE
 	bool "USB CDC console on production builds (printk only, no log subsystem)"
+	depends on !ZMK_STUDIO
 	select USB
 	select USB_DEVICE_STACK
 	select USB_CDC_ACM
