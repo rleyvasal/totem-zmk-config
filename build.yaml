@@ -16,9 +16,14 @@ include:
   # Diagnostic build: left/central only, ZMK Studio RPC over USB.
   # Production totem_left stays CONFIG_ZMK_STUDIO=n. Flash this instead of the
   # daily-driver left UF2; do not settings-reset; keep the known-good left UF2
-  # to roll back. Expect two cu.usbmodem* nodes (console + Studio RPC).
+  # to roll back.
+  #
+  # USB console is OFF on this target. Official Studio expects a single CDC
+  # (the RPC uart from studio-rpc-usb-uart). Sharing that with TOTEM_USB_CONSOLE
+  # enumerates multiple Totem Home serial ports; printk lives on one of them
+  # and Studio's handshake fails on the others.
   - board: xiao_ble//zmk
     shield: totem_left
     snippet: studio-rpc-usb-uart
-    cmake-args: -DCONFIG_ZMK_STUDIO=y
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_TOTEM_USB_CONSOLE=n
     artifact-name: totem_left_studio
