@@ -1,13 +1,15 @@
 /*
- * One CDC only: the Studio RPC uart.
+ * Studio RPC uart plus the XIAO board CDC (printk / shell).
  *
- * The XIAO BLE board adds board_cdc_acm_uart, and totem_left.overlay adds
- * totem_console_uart. Together with this RPC node that is three Totem Home
- * serial ports. Disable the two consoles so zmk.studio has a single target.
+ * Do not disable board_cdc_acm_uart: CONFIG_UART_CONSOLE still compiles
+ * uart_console.c against DT_CHOSEN(zephyr_console). Point that chosen
+ * at the board CDC and drop our extra totem_console_uart so we get two
+ * ports (console + RPC), not three, and the image still links.
  */
 / {
     chosen {
         zmk,studio-rpc-uart = &snippet_studio_rpc_usb_uart;
+        zephyr,console = &board_cdc_acm_uart;
     };
 };
 
@@ -18,9 +20,5 @@
 };
 
 &totem_console_uart {
-    status = "disabled";
-};
-
-&board_cdc_acm_uart {
     status = "disabled";
 };
