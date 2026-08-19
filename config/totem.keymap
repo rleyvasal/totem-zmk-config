@@ -198,9 +198,7 @@
                                          &kp ESC         &lt CODE BSPC       &lt MOD TAB     &lt ADJ ENTER   &lt NAV SPACE   &kp LSHFT
         >;
     };
-
-
-    code_layer {
+code_layer {
         bindings = <
             &kp GRAVE       &kp AT          &kp HASH        &kp SQT         &kp DQT             &kp FSLH        &kp N7          &kp N8          &kp N9          &kp STAR
             &kp LBKT        &hml LALT RBKT  &hml LSHFT LPAR &hml LCTRL RPAR &kp UNDER           &kp MINUS       &hmr LCTRL N4   &hmr RSHFT N5   &hmr RALT N6    &kp PLUS
@@ -208,8 +206,7 @@
                                                             &trans          &trans              &trans          &kp COMMA       &kp N0          &kp BSLH
         >;
     };
-
-        nav_layer {
+nav_layer {
             bindings = <
                 &trans          &msc SCRL_UP    &mmv MOVE_UP    &mkp LCLK       &mkp RCLK           &kp PG_UP       &kp HOME        &kp UP          &kp END         &kp DEL
                 &msc SCRL_LEFT  &mmv MOVE_LEFT  &mmv MOVE_DOWN  &mmv MOVE_RIGHT &msc SCRL_RIGHT     &kp PG_DN       &kp LEFT        &kp DOWN        &kp RIGHT       &kp INS
@@ -217,8 +214,7 @@
                                                                 &trans          &kp LSHFT           &kp LCTRL       &trans          &trans          &trans
             >;
         };
-
-        mod_layer {
+mod_layer {
             bindings = <
                 &mac_lock       &win_lock       &trans          &trans          &trans              &kp C_PREV      &kp C_PP        &kp C_NEXT      &kp C_BRI_UP    &trans
                 &kp CAPS        &sk LALT        &sk LSHFT       &sk LCTRL       &trans              &kp BSPC        &kp DEL         &kp SPACE       &kp ENTER       &kp TAB
@@ -238,8 +234,7 @@
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
-
-        adj_layer {
+adj_layer {
             bindings = <
                 // BT_CLR_ALL removed 2026-07-28: it wipes every bond with no confirmation,
                 // and on 07-26 it cost profiles 0 and 2 mid-debugging. Nothing needs a
@@ -253,7 +248,7 @@
                 // guard (TOTEM_EVICT_REQUIRES_BONDED_ACTIVE) now survives that state;
                 // this removes the easiest way to reach it.
                 &trans          &kp F4          &kp F5          &kp F6          &kp F11             &trans          &trans          &trans          &trans          &trans
-                &sys_reset      &host_log_dump  &kp F1          &kp F2          &kp F3              &kp F10         &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &trans
+                &sys_reset      &host_log_dump  &kp F1          &kp F2          &kp F3              &kp F10         &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &bt BT_CLR_ALL
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
@@ -264,3 +259,4 @@
     release-after-ms = <2000>;
     quick-release;
 };
+
