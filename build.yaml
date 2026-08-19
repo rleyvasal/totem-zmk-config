@@ -1,6 +1,12 @@
 include:
+  # Production left = Studio-enabled. Official "just set CONFIG_ZMK_STUDIO=y"
+  # is not enough on this board: the XIAO CDC + our printk CDC + the RPC uart
+  # enumerate three Totem Home serial ports, and Studio UART RX only starts
+  # when HID is on USB. snippet + cmake-args match the working probe image.
   - board: xiao_ble//zmk
     shield: totem_left
+    snippet: totem-studio-rpc
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n
   - board: xiao_ble//zmk
     shield: totem_right
   - board: xiao_ble//zmk
@@ -13,3 +19,16 @@ include:
     shield: totem_left
     snippet: zmk-usb-logging
     artifact-name: totem_left_logging
+  # Diagnostic build: left/central only, ZMK Studio RPC over USB.
+  # Production totem_left stays CONFIG_ZMK_STUDIO=n. Flash this instead of the
+  # daily-driver left UF2; do not settings-reset; keep the known-good left UF2
+  # to roll back.
+  #
+  # Studio RPC only. Local snippet totem-studio-rpc (not upstream
+  # studio-rpc-usb-uart) so the XIAO board CDC and our printk console
+  # are disabled. Flash totem_left_studio, not totem_left.
+  - board: xiao_ble//zmk
+    shield: totem_left
+    snippet: totem-studio-rpc
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n
+    artifact-name: totem_left_studio

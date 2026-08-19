@@ -1,0 +1,6 @@
+# Studio RPC over USB, with the extra XIAO/Totem console CDCs disabled.
+# Use instead of upstream studio-rpc-usb-uart on this keyboard.
+name: totem-studio-rpc
+append:
+  EXTRA_DTC_OVERLAY_FILE: totem-studio-rpc.overlay
+  EXTRA_CONF_FILE: totem-studio-rpc.conf
