@@ -184,3 +184,10 @@ If you fixed hunks by hand, regenerate the patch:
 `git -C ~/zmk diff <new-upstream-sha> -- app/src/ble.c > patches/zmk-ble.patch`.
 Then set `config/west.yml` `revision:` to **`$TIP` (full SHA)**, not only the
 branch name, and push the config repo.
+
+## Planned Studio runtime extension
+
+[`zmk-studio-runtime-extension.md`](zmk-studio-runtime-extension.md) defines
+the `studio-extension` branch plan for runtime-configurable ZMK Studio
+behaviors, macros, combos, and hold-taps. It is a design document until the
+corresponding firmware patch series is implemented.
