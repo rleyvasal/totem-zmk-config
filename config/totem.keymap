@@ -252,17 +252,6 @@ adj_layer {
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
-
-        // Blank headroom for ZMK Studio's live layer add/move/remove/rename
-        // (stock ZMK keymap subsystem, unrelated to Runtime Config). Reserved
-        // layers don't need bindings/display-name; Studio names and populates
-        // them when a user adds one live. See docs/features/studio.md
-        // "Including Extra Layers" in the zmk-next firmware tree.
-        reserved_1 { status = "reserved"; };
-        reserved_2 { status = "reserved"; };
-        reserved_3 { status = "reserved"; };
-        reserved_4 { status = "reserved"; };
-        reserved_5 { status = "reserved"; };
     };
 };
 
