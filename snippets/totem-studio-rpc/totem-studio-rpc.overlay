@@ -16,7 +16,16 @@
 &zephyr_udc0 {
     snippet_studio_rpc_usb_uart: snippet_studio_rpc_usb_uart {
         compatible = "zephyr,cdc-acm-uart";
+        /* Also becomes this CDC-ACM function's USB interface string
+         * descriptor (see zephyr,cdc-acm-uart.yaml) - lets the two ports
+         * be told apart by name, not by trial and error, in the OS/
+         * browser's own serial-port picker. */
+        label = "ZMK Studio RPC";
     };
+};
+
+&board_cdc_acm_uart {
+    label = "ZMK Console";
 };
 
 &totem_console_uart {
