@@ -13,7 +13,7 @@ manifest:
       # Runtime Config plus the validated Totem BLE reconnect patch. Keep this
       # exact revision pinned so production and Studio test artifacts use the
       # same protocol and persistence implementation.
-      revision: 9c4a396dcee42eff0145828da34e11bfbc2661ee
+      revision: 34ff30a32721719552fbdbbf6ce10929992675fd
       import: app/west.yml
   self:
     path: config
