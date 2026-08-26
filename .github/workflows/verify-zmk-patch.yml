@@ -59,18 +59,22 @@ jobs:
         run: |
           set -euo pipefail
           REV=$(awk '/name: zmk/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
+          REPO_PATH=$(awk '/name: zmk/,/revision:/ { if ($1 == "repo-path:") { print $2; exit } }' config/west.yml)
+          REPO_PATH=${REPO_PATH:-zmk}
           if [ -z "$REV" ]; then
             echo "::error::Could not parse zmk revision from config/west.yml"
             exit 1
           fi
           echo "revision=$REV" >> "$GITHUB_OUTPUT"
-          echo "Tracking ZMK revision: $REV"
+          echo "repository=rleyvasal/$REPO_PATH" >> "$GITHUB_OUTPUT"
+          echo "Tracking rleyvasal/$REPO_PATH revision: $REV"
 
       - name: Fetch ZMK at pinned revision
         run: |
           set -euo pipefail
           REV="${{ steps.rev.outputs.revision }}"
-          git clone --filter=blob:none --no-checkout https://github.com/rleyvasal/zmk.git zmk
+          REPOSITORY="${{ steps.rev.outputs.repository }}"
+          git clone --filter=blob:none --no-checkout "https://github.com/${REPOSITORY}.git" zmk
           git -C zmk fetch --depth 1 origin "$REV"
           git -C zmk checkout FETCH_HEAD
           git -C zmk rev-parse HEAD
