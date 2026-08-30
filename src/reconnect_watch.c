@@ -7,8 +7,8 @@
  *   1) FULL (BT_SEL): prof_select / reselect kick.
  *      LIGHT (active-down): densify boost + open ads; never prof_select.
  *   2) Force-evict any non-active host still connected.
- *   3) If a peripheral host maps to active but ZMK still not connected (zombie),
- *      soft-drop that host only (never idx < 0).
+ *   3) Final connection-table verification. Never disconnect an active-profile
+ *      connection merely because a second helper temporarily disagrees.
  *
  * Central-only. No address filters. Does not pause advertising "for thrash"
  * (that regressed dual-host switching).
@@ -148,6 +148,18 @@ static void reconnect_watch_work_handler(struct k_work *work) {
     struct host_conn_scan scan = {0};
     bt_conn_foreach(BT_CONN_TYPE_LE, scan_host_conns, &scan);
 
+    /* scan_host_conns only records a profile match after bt_conn_get_info()
+     * reports BT_CONN_STATE_CONNECTED. That is stronger evidence than the
+     * identity-address helper, which can temporarily find a stale connection
+     * object while a macOS RPA connection is live. Never run recovery against
+     * a connection we have independently verified as active. */
+    if (scan.active_match != NULL) {
+        LOG_INF("totem_ble watch done: verified active connection");
+        reconnect_watch_reset();
+        host_conn_scan_release(&scan);
+        return;
+    }
+
     LOG_WRN("totem_ble watch active_down=%d profile=%d hosts=%d step=%d", ladder_from_active_down,
             zmk_ble_active_profile_index(), scan.host_count, next_step);
 
@@ -184,21 +196,13 @@ static void reconnect_watch_work_handler(struct k_work *work) {
         break;
 
     case RECONNECT_STEP_ZOMBIE:
-        /* Never drop unmapped (idx < 0) hosts. Only soft-drop a conn that maps
-         * to the active profile but ZMK still reports not connected. */
+        /* Never drop unmapped (idx < 0) hosts. A connected active-profile
+         * match was handled above and must never be treated as a zombie. */
         totem_host_event_log_record(TOTEM_HEVT_WATCH_STEP, (int8_t)zmk_ble_active_profile_index(),
                                     (int8_t)zmk_ble_active_profile_index(), 3,
                                     (uint8_t)scan.host_count,
                                     ladder_from_active_down ? 1 : 0);
-        if (scan.active_match != NULL && !zmk_ble_active_profile_is_connected()) {
-            char addr[BT_ADDR_LE_STR_LEN];
-            bt_addr_le_to_str(bt_conn_get_dst(scan.active_match), addr, sizeof(addr));
-            LOG_WRN("totem_ble watch step=3 mode=%s zombie soft_drop addr=%s",
-                    ladder_from_active_down ? "light" : "full", addr);
-            (void)bt_conn_disconnect(scan.active_match, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-        } else {
-            LOG_WRN("totem_ble watch step=3 leave unmapped/pairing alone");
-        }
+        LOG_WRN("totem_ble watch step=3 leave unmapped/pairing alone");
         reconnect_watch_reset();
         break;
 

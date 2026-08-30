@@ -314,8 +314,9 @@ config TOTEM_RECONNECT_WATCH
 	default y
 	help
 	  After BT_SEL, if the active bonded host does not come up, run a recovery
-	  ladder: kick advertising, force-evict background hosts, then soft-drop a
-	  zombie host conn. Never clears bonds. Module src/reconnect_watch.c.
+	  ladder: kick advertising, force-evict background hosts, then verify the
+	  connection table without dropping an active-profile connection. Never
+	  clears bonds. Module src/reconnect_watch.c.
 	  Central-only.
 
 config TOTEM_RECONNECT_WATCH_SEC
@@ -331,7 +332,8 @@ config TOTEM_RECONNECT_WATCH_ON_ACTIVE_DOWN
 	help
 	  When a peer that maps to the active profile disconnects (not background
 	  thrash, not unresolved RPA), arm the light recovery ladder: densify ads /
-	  kick open advertising, force-evict background hosts, soft-drop zombie.
+	  kick open advertising, force-evict background hosts, then verify the
+	  connection table without dropping an active-profile connection.
 	  Never full reselect (avoids Class D mute risk). Skips when advertising is
 	  intentionally suppressed (idle go-dark / throttle). Central-only.
 
