@@ -139,22 +139,23 @@
         // split link to arrive. Diagnostic when stuck:
         //   fires (left half reboots) -> CPU alive, BLE-stack hang -> keypress recovery viable
         //   does nothing              -> full MCU freeze -> hardware watchdog needed
-        // No `layers` property -> active on every layer, so it works whatever state
-        // the keymap is in when it wedges.
+        // Keep recovery chords on BASE so their physical positions cannot trigger
+        // unexpectedly while another layer is active.
         combo_reset_left {
             timeout-ms = <50>;
             key-positions = <20 21>;
             bindings = <&sys_reset>;
+            layers = <BASE>;
         };
 
         // Left-half-ONLY host event log dump: [ (20) + X (22).
         // Distinct from [ + Z reset. Capture runs all day on production UF2;
         // dump prints over USB serial when a console is present.
-        // No `layers` -> works on any layer after an incident.
         combo_host_log_dump {
             timeout-ms = <50>;
             key-positions = <20 22>;
             bindings = <&host_log_dump>;
+            layers = <BASE>;
         };
 
 #ifdef CONFIG_ZMK_STUDIO
@@ -164,6 +165,7 @@
             timeout-ms = <80>;
             key-positions = <0 4>;
             bindings = <&studio_unlock>;
+            layers = <BASE>;
         };
 #endif
     };
@@ -229,17 +231,17 @@ mod_layer {
                 // unmistakable (only bonded profiles cleared, active forced to 0, which is
                 // exactly what zmk_ble_clear_all_bonds() does). Destructive, unconfirmed
                 // bindings do not belong next to the ones you reach for in a panic.
-                // Clearing a bond stays on ADJ; settings_reset covers the nuclear case.
+                // Clear a bond only by assigning it temporarily in the USB configurator;
+                // settings_reset covers the nuclear case.
                 &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &trans              &trans          &kp C_VOL_DN    &kp C_MUTE      &kp C_VOL_UP    &kp C_BRI_DN    &trans          &trans
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
 adj_layer {
             bindings = <
-                // BT_CLR_ALL removed 2026-07-28: it wipes every bond with no confirmation,
-                // and on 07-26 it cost profiles 0 and 2 mid-debugging. Nothing needs a
-                // single keystroke that destroys all pairings -- BT_CLR below clears one
-                // profile, and settings_reset.uf2 covers the nuclear case deliberately.
+                // Bond clearing is deliberately absent from the compiled keymap. Both
+                // BT_CLR and BT_CLR_ALL are destructive and can be assigned temporarily
+                // from the configurator over USB when intentional recovery is required.
                 &trans          &kp F7          &kp F8          &kp F9          &kp F12             &trans          &trans          &trans          &trans          &trans
                 // BT_SEL 3 / BT_SEL 4 removed 2026-07-25. Only three hosts are ever
                 // used, so those bindings did nothing but arm a trap: selecting an
@@ -248,7 +250,7 @@ adj_layer {
                 // guard (TOTEM_EVICT_REQUIRES_BONDED_ACTIVE) now survives that state;
                 // this removes the easiest way to reach it.
                 &trans          &kp F4          &kp F5          &kp F6          &kp F11             &trans          &trans          &trans          &trans          &trans
-                &sys_reset      &host_log_dump  &kp F1          &kp F2          &kp F3              &kp F10         &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &bt BT_CLR      &bt BT_CLR_ALL
+                &sys_reset      &host_log_dump  &kp F1          &kp F2          &kp F3              &kp F10         &trans          &bt BT_SEL 0    &bt BT_SEL 1    &bt BT_SEL 2    &none           &none
                                                                 &trans          &trans              &trans          &trans          &trans          &trans
             >;
         };
@@ -270,4 +272,3 @@ adj_layer {
     release-after-ms = <2000>;
     quick-release;
 };
-

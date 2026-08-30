@@ -27,7 +27,7 @@ Human-readable fork branch names look like `zmk-optimized-<base-sha>`; west trac
 
 On the ADJ layer, press the target profile’s `&bt BT_SEL`. Exclusive-host disconnects the previous computer and connects the selected profile. Only one computer should remain connected.
 
-**Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. If it still won’t type: Forget on the host → `BT_CLR` on that profile → re-pair.
+**Soft recovery:** press the **same** `BT_SEL` again if the target shows Connected but won’t type (common macOS half-dead link). That forces disconnect + re-advertise without a full re-pair. If it still won’t type: connect over USB, temporarily assign `BT_CLR` from the configurator to a deliberate key, clear that profile, remove the assignment, then Forget on the host and re-pair. The compiled keymap intentionally contains no bond-clear shortcuts.
 
 **Profile switch time:** Every switch requires a real BLE reconnect. macOS often takes a few seconds and Windows can take longer because the host controls scanning. The firmware advertises densely for the first 20 seconds, then normally for up to the five-minute throttle limit.
 
@@ -132,6 +132,6 @@ Skip settings reset; flash both halves with the new left/right UF2s.
 
 1. Set `CONFIG_ZMK_KEYBOARD_NAME` in `config/totem.conf`  
 2. Build, then **settings-reset both halves** before flashing new firmware  
-3. Clear host bonds with `&bt BT_CLR_ALL` if needed  
+3. Forget the old keyboard entry on each host and re-pair
 
 The name is stored in settings; reset is required for a clean rename.
