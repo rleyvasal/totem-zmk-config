@@ -1,0 +1,650 @@
+diff --git a/app/CMakeLists.txt b/app/CMakeLists.txt
+index c41153cb..ff6a32f5 100644
+--- a/app/CMakeLists.txt
++++ b/app/CMakeLists.txt
+@@ -75,6 +75,7 @@ if ((NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+   target_sources(app PRIVATE src/events/endpoint_changed.c)
+   target_sources(app PRIVATE src/hid_listener.c)
+   target_sources(app PRIVATE src/keymap.c)
++  target_sources_ifdef(CONFIG_ZMK_STUDIO_RUNTIME_KEYMAP app PRIVATE src/runtime_keymap.c)
+   target_sources(app PRIVATE src/events/layer_state_changed.c)
+   target_sources(app PRIVATE src/events/modifiers_state_changed.c)
+   target_sources(app PRIVATE src/events/keycode_state_changed.c)
+@@ -125,12 +126,14 @@ if (CONFIG_ZMK_STUDIO_RPC)
+                         ${ZEPHYR_ZMK_STUDIO_MESSAGES_MODULE_DIR}/proto/zmk/core.proto
+                         ${ZEPHYR_ZMK_STUDIO_MESSAGES_MODULE_DIR}/proto/zmk/behaviors.proto
+                         ${ZEPHYR_ZMK_STUDIO_MESSAGES_MODULE_DIR}/proto/zmk/keymap.proto
++                        ${ZEPHYR_ZMK_STUDIO_MESSAGES_MODULE_DIR}/proto/zmk/runtime.proto
+   )
+ 
+   target_include_directories(app PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+   target_sources(app PRIVATE ${proto_srcs} ${proto_hdrs})
+ 
+   add_subdirectory(src/studio)
++  target_sources_ifdef(CONFIG_ZMK_STUDIO_RUNTIME_KEYMAP app PRIVATE src/studio/runtime_subsystem.c)
+ endif()
+ 
+ zephyr_cc_option(-Wfatal-errors)
+diff --git a/app/src/studio/Kconfig b/app/src/studio/Kconfig
+index 1f4da6d3..cd1e7a13 100644
+--- a/app/src/studio/Kconfig
++++ b/app/src/studio/Kconfig
+@@ -101,8 +101,34 @@ config ZMK_STUDIO_RPC_THREAD_STACK_SIZE
+     int "RPC Thread Stack Size"
+     default 4096
+ 
++menuconfig ZMK_STUDIO_RUNTIME_KEYMAP
++    bool "Runtime keymap storage and transactions"
++    default y
++    select CRC
++    help
++      Add the versioned, checksummed runtime-keymap bundle store. Uploads are
++      staged in RAM and committed atomically to an inactive settings slot.
++
++if ZMK_STUDIO_RUNTIME_KEYMAP
++
++config ZMK_RUNTIME_KEYMAP_MAX_BUNDLE_SIZE
++    int "Maximum runtime bundle size"
++    default 2048
++    range 128 8192
++
++config ZMK_RUNTIME_KEYMAP_CHUNK_SIZE
++    int "Runtime bundle transfer chunk size"
++    default 32
++    range 1 32
++    help
++      Maximum payload for one Studio runtime upload or readback request.
++      The Studio RPC receive buffer default is increased when this is enabled.
++
++endif
++
+ config ZMK_STUDIO_RPC_RX_BUF_SIZE
+     int "RX Buffer Size"
++    default 128 if ZMK_STUDIO_RUNTIME_KEYMAP
+     default 30
+ 
+ config ZMK_STUDIO_RPC_TX_BUF_SIZE
+diff --git a/app/include/zmk/runtime_keymap.h b/app/include/zmk/runtime_keymap.h
+new file mode 100644
+index 00000000..252b677b
+--- /dev/null
++++ b/app/include/zmk/runtime_keymap.h
+@@ -0,0 +1,35 @@
++/*
++ * Copyright (c) 2026
++ * SPDX-License-Identifier: MIT
++ */
++
++#pragma once
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++struct zmk_runtime_keymap_info {
++    bool active;
++    uint32_t schema_version;
++    uint32_t revision;
++    uint32_t size;
++    uint32_t checksum;
++    uint32_t staging_update_id;
++    uint32_t staging_size;
++    uint32_t staging_received_size;
++};
++
++void zmk_runtime_keymap_get_info(struct zmk_runtime_keymap_info *info);
++
++int zmk_runtime_keymap_begin_update(uint32_t schema_version, uint32_t revision, uint32_t size,
++                                    uint32_t checksum, uint32_t *update_id);
++int zmk_runtime_keymap_upload_chunk(uint32_t update_id, uint32_t offset, const uint8_t *data,
++                                    size_t len);
++int zmk_runtime_keymap_validate_update(uint32_t update_id);
++int zmk_runtime_keymap_commit_update(uint32_t update_id);
++int zmk_runtime_keymap_abort_update(uint32_t update_id);
++
++int zmk_runtime_keymap_get_chunk(uint32_t offset, uint8_t *data, size_t capacity, size_t *len,
++                                 bool *eof);
++int zmk_runtime_keymap_reset_settings(void);
+diff --git a/app/src/runtime_keymap.c b/app/src/runtime_keymap.c
+new file mode 100644
+index 00000000..0596f119
+--- /dev/null
++++ b/app/src/runtime_keymap.c
+@@ -0,0 +1,377 @@
++/*
++ * Copyright (c) 2026
++ * SPDX-License-Identifier: MIT
++ */
++
++#include <errno.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include <zephyr/settings/settings.h>
++#include <zephyr/sys/crc.h>
++#include <zephyr/sys/util.h>
++
++#include <zmk/runtime_keymap.h>
++
++#define RUNTIME_KEYMAP_SCHEMA_VERSION 1U
++#define RUNTIME_KEYMAP_STORAGE_MAGIC 0x524B4D31U /* RKM1 */
++#define RUNTIME_KEYMAP_SLOT_COUNT 2U
++#define RUNTIME_KEYMAP_MAX_CHUNKS                                                                  \
++    DIV_ROUND_UP(CONFIG_ZMK_RUNTIME_KEYMAP_MAX_BUNDLE_SIZE,                                       \
++                 CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE)
++#define RUNTIME_KEYMAP_RECEIVED_BYTES                                                              \
++    DIV_ROUND_UP(CONFIG_ZMK_RUNTIME_KEYMAP_MAX_BUNDLE_SIZE, 8U)
++
++struct runtime_keymap_header {
++    uint32_t magic;
++    uint32_t generation;
++    uint32_t schema_version;
++    uint32_t revision;
++    uint32_t size;
++    uint32_t checksum;
++} __packed;
++
++struct runtime_keymap_slot {
++    struct runtime_keymap_header header;
++    uint8_t data[CONFIG_ZMK_RUNTIME_KEYMAP_MAX_BUNDLE_SIZE];
++    uint8_t chunk_lengths[RUNTIME_KEYMAP_MAX_CHUNKS];
++};
++
++struct runtime_keymap_staging {
++    bool active;
++    uint32_t update_id;
++    uint32_t schema_version;
++    uint32_t revision;
++    uint32_t size;
++    uint32_t checksum;
++    uint32_t received_size;
++    uint8_t data[CONFIG_ZMK_RUNTIME_KEYMAP_MAX_BUNDLE_SIZE];
++    uint8_t received[RUNTIME_KEYMAP_RECEIVED_BYTES];
++};
++
++static struct runtime_keymap_slot slots[RUNTIME_KEYMAP_SLOT_COUNT];
++static struct runtime_keymap_staging staging;
++static int active_slot = -1;
++static uint32_t next_update_id;
++
++static bool header_has_valid_shape(const struct runtime_keymap_header *header) {
++    return header->magic == RUNTIME_KEYMAP_STORAGE_MAGIC &&
++           header->schema_version == RUNTIME_KEYMAP_SCHEMA_VERSION && header->size > 0 &&
++           header->size <= CONFIG_ZMK_RUNTIME_KEYMAP_MAX_BUNDLE_SIZE;
++}
++
++static size_t chunk_count(uint32_t size) {
++    return DIV_ROUND_UP(size, CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE);
++}
++
++static size_t expected_chunk_length(uint32_t size, size_t chunk) {
++    const size_t offset = chunk * CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE;
++    return MIN((size_t)CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE, size - offset);
++}
++
++static bool slot_is_valid(const struct runtime_keymap_slot *slot) {
++    if (!header_has_valid_shape(&slot->header)) {
++        return false;
++    }
++
++    const size_t count = chunk_count(slot->header.size);
++    for (size_t chunk = 0; chunk < count; chunk++) {
++        if (slot->chunk_lengths[chunk] != expected_chunk_length(slot->header.size, chunk)) {
++            return false;
++        }
++    }
++
++    return crc32_ieee(slot->data, slot->header.size) == slot->header.checksum;
++}
++
++static bool is_newer_generation(uint32_t candidate, uint32_t reference) {
++    return (int32_t)(candidate - reference) > 0;
++}
++
++static void clear_staging(void) { memset(&staging, 0, sizeof(staging)); }
++
++static bool staging_byte_received(size_t index) {
++    return (staging.received[index / 8U] & BIT(index % 8U)) != 0;
++}
++
++static void mark_staging_byte_received(size_t index) {
++    staging.received[index / 8U] |= BIT(index % 8U);
++}
++
++static bool staging_matches(uint32_t update_id) {
++    return staging.active && staging.update_id == update_id;
++}
++
++void zmk_runtime_keymap_get_info(struct zmk_runtime_keymap_info *info) {
++    memset(info, 0, sizeof(*info));
++
++    if (active_slot >= 0 && slot_is_valid(&slots[active_slot])) {
++        const struct runtime_keymap_header *header = &slots[active_slot].header;
++        info->active = true;
++        info->schema_version = header->schema_version;
++        info->revision = header->revision;
++        info->size = header->size;
++        info->checksum = header->checksum;
++    }
++
++    if (staging.active) {
++        info->staging_update_id = staging.update_id;
++        info->staging_size = staging.size;
++        info->staging_received_size = staging.received_size;
++    }
++}
++
++int zmk_runtime_keymap_begin_update(uint32_t schema_version, uint32_t revision, uint32_t size,
++                                    uint32_t checksum, uint32_t *update_id) {
++    if (staging.active) {
++        return -EBUSY;
++    }
++
++    if (schema_version != RUNTIME_KEYMAP_SCHEMA_VERSION) {
++        return -EPROTONOSUPPORT;
++    }
++
++    if (size == 0 || size > CONFIG_ZMK_RUNTIME_KEYMAP_MAX_BUNDLE_SIZE) {
++        return -EMSGSIZE;
++    }
++
++    clear_staging();
++    staging.active = true;
++    staging.schema_version = schema_version;
++    staging.revision = revision;
++    staging.size = size;
++    staging.checksum = checksum;
++
++    next_update_id++;
++    if (next_update_id == 0) {
++        next_update_id++;
++    }
++    staging.update_id = next_update_id;
++    *update_id = staging.update_id;
++
++    return 0;
++}
++
++int zmk_runtime_keymap_upload_chunk(uint32_t update_id, uint32_t offset, const uint8_t *data,
++                                    size_t len) {
++    if (!staging_matches(update_id)) {
++        return -ENOENT;
++    }
++
++    if (!data || len == 0 || len > CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE || offset > staging.size ||
++        len > staging.size - offset) {
++        return -ERANGE;
++    }
++
++    for (size_t i = 0; i < len; i++) {
++        const size_t index = offset + i;
++        if (staging_byte_received(index) && staging.data[index] != data[i]) {
++            return -EEXIST;
++        }
++    }
++
++    for (size_t i = 0; i < len; i++) {
++        const size_t index = offset + i;
++        if (!staging_byte_received(index)) {
++            staging.data[index] = data[i];
++            mark_staging_byte_received(index);
++            staging.received_size++;
++        }
++    }
++
++    return 0;
++}
++
++int zmk_runtime_keymap_validate_update(uint32_t update_id) {
++    if (!staging_matches(update_id)) {
++        return -ENOENT;
++    }
++
++    if (staging.received_size != staging.size) {
++        return -ENODATA;
++    }
++
++    if (crc32_ieee(staging.data, staging.size) != staging.checksum) {
++        return -EBADMSG;
++    }
++
++    return 0;
++}
++
++static int settings_save_slot_chunk(uint8_t slot, size_t chunk, const uint8_t *data, size_t len) {
++    char key[32];
++    snprintf(key, sizeof(key), "runtime_keymap/s%u/c%u", slot, (unsigned int)chunk);
++    return settings_save_one(key, data, len);
++}
++
++static int settings_save_slot_header(uint8_t slot, const struct runtime_keymap_header *header) {
++    char key[32];
++    snprintf(key, sizeof(key), "runtime_keymap/s%u/h", slot);
++    return settings_save_one(key, header, sizeof(*header));
++}
++
++int zmk_runtime_keymap_commit_update(uint32_t update_id) {
++    int err = zmk_runtime_keymap_validate_update(update_id);
++    if (err < 0) {
++        return err;
++    }
++
++    const uint8_t target_slot = active_slot == 0 ? 1 : 0;
++    const uint32_t generation =
++        active_slot >= 0 ? slots[active_slot].header.generation + 1U : 1U;
++    const struct runtime_keymap_header header = {
++        .magic = RUNTIME_KEYMAP_STORAGE_MAGIC,
++        .generation = generation,
++        .schema_version = staging.schema_version,
++        .revision = staging.revision,
++        .size = staging.size,
++        .checksum = staging.checksum,
++    };
++
++    // Invalidate the inactive slot before replacing its chunks. The new header
++    // below is the sole commit marker, so a reset or power loss cannot select a
++    // partially replaced older slot.
++    char header_key[32];
++    snprintf(header_key, sizeof(header_key), "runtime_keymap/s%u/h", target_slot);
++    err = settings_delete(header_key);
++    if (err < 0 && err != -ENOENT) {
++        return err;
++    }
++
++    const size_t count = chunk_count(staging.size);
++    for (size_t chunk = 0; chunk < count; chunk++) {
++        const size_t offset = chunk * CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE;
++        err = settings_save_slot_chunk(target_slot, chunk, &staging.data[offset],
++                                       expected_chunk_length(staging.size, chunk));
++        if (err < 0) {
++            return err;
++        }
++    }
++
++    // The header is the commit marker. Until this final write succeeds, boot
++    // selection keeps using the prior valid slot.
++    err = settings_save_slot_header(target_slot, &header);
++    if (err < 0) {
++        return err;
++    }
++
++    struct runtime_keymap_slot *slot = &slots[target_slot];
++    slot->header = header;
++    memcpy(slot->data, staging.data, staging.size);
++    memset(slot->chunk_lengths, 0, sizeof(slot->chunk_lengths));
++    for (size_t chunk = 0; chunk < count; chunk++) {
++        slot->chunk_lengths[chunk] = expected_chunk_length(staging.size, chunk);
++    }
++
++    active_slot = target_slot;
++    clear_staging();
++    return 0;
++}
++
++int zmk_runtime_keymap_abort_update(uint32_t update_id) {
++    if (!staging_matches(update_id)) {
++        return -ENOENT;
++    }
++
++    clear_staging();
++    return 0;
++}
++
++int zmk_runtime_keymap_get_chunk(uint32_t offset, uint8_t *data, size_t capacity, size_t *len,
++                                 bool *eof) {
++    if (active_slot < 0 || !slot_is_valid(&slots[active_slot])) {
++        return -ENOENT;
++    }
++
++    const struct runtime_keymap_slot *slot = &slots[active_slot];
++    if (offset > slot->header.size || capacity < CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE) {
++        return -ERANGE;
++    }
++
++    *len = MIN((size_t)CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE, slot->header.size - offset);
++    if (*len > 0) {
++        memcpy(data, &slot->data[offset], *len);
++    }
++    *eof = offset + *len == slot->header.size;
++    return 0;
++}
++
++int zmk_runtime_keymap_reset_settings(void) {
++    int first_error = 0;
++
++    for (uint8_t slot = 0; slot < RUNTIME_KEYMAP_SLOT_COUNT; slot++) {
++        char key[32];
++        snprintf(key, sizeof(key), "runtime_keymap/s%u/h", slot);
++        int err = settings_delete(key);
++        if (err < 0 && first_error == 0) {
++            first_error = err;
++        }
++
++        for (size_t chunk = 0; chunk < RUNTIME_KEYMAP_MAX_CHUNKS; chunk++) {
++            snprintf(key, sizeof(key), "runtime_keymap/s%u/c%u", slot, (unsigned int)chunk);
++            err = settings_delete(key);
++            if (err < 0 && first_error == 0) {
++                first_error = err;
++            }
++        }
++    }
++
++    memset(slots, 0, sizeof(slots));
++    clear_staging();
++    active_slot = -1;
++    return first_error;
++}
++
++static int runtime_keymap_settings_set(const char *name, size_t len, settings_read_cb read_cb,
++                                       void *cb_arg) {
++    if (!name || name[0] != 's' || (name[1] != '0' && name[1] != '1') || name[2] != '/') {
++        return 0;
++    }
++
++    const uint8_t slot = name[1] - '0';
++    const char *entry = &name[3];
++    if (strcmp(entry, "h") == 0) {
++        if (len != sizeof(struct runtime_keymap_header)) {
++            return -EINVAL;
++        }
++        return read_cb(cb_arg, &slots[slot].header, len) > 0 ? 0 : -EIO;
++    }
++
++    if (entry[0] != 'c' || entry[1] == '\0') {
++        return 0;
++    }
++
++    char *end;
++    const unsigned long chunk = strtoul(&entry[1], &end, 10);
++    if (*end != '\0' || chunk >= RUNTIME_KEYMAP_MAX_CHUNKS || len == 0 ||
++        len > CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE) {
++        return -EINVAL;
++    }
++
++    int ret = read_cb(cb_arg, &slots[slot].data[chunk * CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE], len);
++    if (ret <= 0) {
++        return ret < 0 ? ret : -EIO;
++    }
++    slots[slot].chunk_lengths[chunk] = ret;
++    return 0;
++}
++
++static int runtime_keymap_settings_commit(void) {
++    int selected = -1;
++    for (uint8_t slot = 0; slot < RUNTIME_KEYMAP_SLOT_COUNT; slot++) {
++        if (!slot_is_valid(&slots[slot])) {
++            continue;
++        }
++        if (selected < 0 || is_newer_generation(slots[slot].header.generation,
++                                                 slots[selected].header.generation)) {
++            selected = slot;
++        }
++    }
++
++    active_slot = selected;
++    return 0;
++}
++
++SETTINGS_STATIC_HANDLER_DEFINE(runtime_keymap, "runtime_keymap", NULL, runtime_keymap_settings_set,
++                               runtime_keymap_settings_commit, NULL);
+diff --git a/app/src/studio/runtime_subsystem.c b/app/src/studio/runtime_subsystem.c
+new file mode 100644
+index 00000000..00274663
+--- /dev/null
++++ b/app/src/studio/runtime_subsystem.c
+@@ -0,0 +1,143 @@
++/*
++ * Copyright (c) 2026
++ * SPDX-License-Identifier: MIT
++ */
++
++#include <errno.h>
++#include <zmk/runtime_keymap.h>
++#include <zmk/studio/rpc.h>
++
++ZMK_RPC_SUBSYSTEM(runtime)
++
++#define RUNTIME_RESPONSE(type, ...) ZMK_RPC_RESPONSE(runtime, type, __VA_ARGS__)
++
++static void populate_runtime_info(zmk_runtime_RuntimeConfigInfo *dest) {
++    struct zmk_runtime_keymap_info info;
++    zmk_runtime_keymap_get_info(&info);
++
++    dest->active = info.active;
++    dest->schema_version = info.schema_version;
++    dest->revision = info.revision;
++    dest->size = info.size;
++    dest->checksum = info.checksum;
++    dest->staging_update_id = info.staging_update_id;
++    dest->staging_size = info.staging_size;
++    dest->staging_received_size = info.staging_received_size;
++}
++
++static zmk_runtime_RuntimeUpdateError runtime_error_from_errno(int err) {
++    switch (err) {
++    case -ENOTSUP:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_NOT_SUPPORTED;
++    case -EBUSY:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_BUSY;
++    case -ENOENT:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_INVALID_UPDATE;
++    case -EPROTONOSUPPORT:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_INVALID_SCHEMA;
++    case -EMSGSIZE:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_INVALID_SIZE;
++    case -ERANGE:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_INVALID_OFFSET;
++    case -EEXIST:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_CONFLICTING_DATA;
++    case -ENODATA:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_INCOMPLETE;
++    case -EBADMSG:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_CHECKSUM;
++    default:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_PERSISTENCE;
++    }
++}
++
++static zmk_runtime_RuntimeUpdateResult runtime_update_result(int err) {
++    zmk_runtime_RuntimeUpdateResult result = zmk_runtime_RuntimeUpdateResult_init_zero;
++    if (err < 0) {
++        result.which_result = zmk_runtime_RuntimeUpdateResult_err_tag;
++        result.result.err = runtime_error_from_errno(err);
++    } else {
++        result.which_result = zmk_runtime_RuntimeUpdateResult_ok_tag;
++        populate_runtime_info(&result.result.ok);
++    }
++    return result;
++}
++
++zmk_studio_Response get_config_info(const zmk_studio_Request *req) {
++    zmk_runtime_RuntimeConfigInfo info = zmk_runtime_RuntimeConfigInfo_init_zero;
++    populate_runtime_info(&info);
++    return RUNTIME_RESPONSE(get_config_info, info);
++}
++
++zmk_studio_Response begin_update(const zmk_studio_Request *req) {
++    const zmk_runtime_BeginRuntimeUpdateRequest *begin =
++        &req->subsystem.runtime.request_type.begin_update;
++    uint32_t update_id;
++    int err = zmk_runtime_keymap_begin_update(begin->schema_version, begin->revision, begin->size,
++                                              begin->checksum, &update_id);
++    if (err == 0 && update_id == 0) {
++        err = -EIO;
++    }
++    return RUNTIME_RESPONSE(begin_update, runtime_update_result(err));
++}
++
++zmk_studio_Response upload_chunk(const zmk_studio_Request *req) {
++    const zmk_runtime_UploadRuntimeChunkRequest *upload =
++        &req->subsystem.runtime.request_type.upload_chunk;
++    int err = zmk_runtime_keymap_upload_chunk(upload->update_id, upload->offset, upload->data.bytes,
++                                               upload->data.size);
++    return RUNTIME_RESPONSE(upload_chunk, runtime_update_result(err));
++}
++
++zmk_studio_Response validate_update(const zmk_studio_Request *req) {
++    const zmk_runtime_RuntimeUpdateRequest *update =
++        &req->subsystem.runtime.request_type.validate_update;
++    return RUNTIME_RESPONSE(validate_update,
++                            runtime_update_result(zmk_runtime_keymap_validate_update(
++                                update->update_id)));
++}
++
++zmk_studio_Response commit_update(const zmk_studio_Request *req) {
++    const zmk_runtime_RuntimeUpdateRequest *update =
++        &req->subsystem.runtime.request_type.commit_update;
++    return RUNTIME_RESPONSE(commit_update,
++                            runtime_update_result(zmk_runtime_keymap_commit_update(update->update_id)));
++}
++
++zmk_studio_Response abort_update(const zmk_studio_Request *req) {
++    const zmk_runtime_RuntimeUpdateRequest *update =
++        &req->subsystem.runtime.request_type.abort_update;
++    return RUNTIME_RESPONSE(abort_update,
++                            runtime_update_result(zmk_runtime_keymap_abort_update(update->update_id)));
++}
++
++zmk_studio_Response get_config_chunk(const zmk_studio_Request *req) {
++    const zmk_runtime_GetRuntimeConfigChunkRequest *get =
++        &req->subsystem.runtime.request_type.get_config_chunk;
++    zmk_runtime_RuntimeConfigChunk chunk = zmk_runtime_RuntimeConfigChunk_init_zero;
++    size_t len;
++    int err = zmk_runtime_keymap_get_chunk(get->offset, chunk.data.bytes, sizeof(chunk.data.bytes),
++                                           &len, &chunk.eof);
++    if (err < 0) {
++        chunk.error = err == -ENOENT
++                          ? zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_NO_ACTIVE_CONFIG
++                          : runtime_error_from_errno(err);
++        return RUNTIME_RESPONSE(get_config_chunk, chunk);
++    }
++
++    populate_runtime_info(&chunk.info);
++    chunk.offset = get->offset;
++    chunk.data.size = len;
++    return RUNTIME_RESPONSE(get_config_chunk, chunk);
++}
++
++static int runtime_keymap_settings_reset(void) { return zmk_runtime_keymap_reset_settings(); }
++
++ZMK_RPC_SUBSYSTEM_SETTINGS_RESET(runtime, runtime_keymap_settings_reset);
++
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, get_config_info, ZMK_STUDIO_RPC_HANDLER_SECURED);
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, begin_update, ZMK_STUDIO_RPC_HANDLER_SECURED);
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, upload_chunk, ZMK_STUDIO_RPC_HANDLER_SECURED);
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, validate_update, ZMK_STUDIO_RPC_HANDLER_SECURED);
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, commit_update, ZMK_STUDIO_RPC_HANDLER_SECURED);
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, abort_update, ZMK_STUDIO_RPC_HANDLER_SECURED);
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, get_config_chunk, ZMK_STUDIO_RPC_HANDLER_SECURED);
+diff --git a/app/src/studio/keymap_subsystem.c b/app/src/studio/keymap_subsystem.c
+--- a/app/src/studio/keymap_subsystem.c
++++ b/app/src/studio/keymap_subsystem.c
+@@ -121,3 +121,7 @@ static void populate_runtime_capabilities(zmk_keymap_Keymap *keymap) {
+     keymap->has_runtime_capabilities = true;
+     keymap->runtime_capabilities.protocol_version = 1;
++#if IS_ENABLED(CONFIG_ZMK_STUDIO_RUNTIME_KEYMAP)
++    keymap->runtime_capabilities.supports_transactions = true;
++    keymap->runtime_capabilities.supports_persistence = true;
++#endif
+ }

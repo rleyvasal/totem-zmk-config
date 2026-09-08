@@ -1,0 +1,367 @@
+diff --git a/app/CMakeLists.txt b/app/CMakeLists.txt
+index ff6a32f..8b05838 100644
+--- a/app/CMakeLists.txt
++++ b/app/CMakeLists.txt
+@@ -76,6 +76,7 @@ if ((NOT CONFIG_ZMK_SPLIT) OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+   target_sources(app PRIVATE src/hid_listener.c)
+   target_sources(app PRIVATE src/keymap.c)
+   target_sources_ifdef(CONFIG_ZMK_STUDIO_RUNTIME_KEYMAP app PRIVATE src/runtime_keymap.c)
++  target_sources_ifdef(CONFIG_ZMK_STUDIO_RUNTIME_KEYMAP app PRIVATE src/runtime_keymap_bindings.c)
+   target_sources(app PRIVATE src/events/layer_state_changed.c)
+   target_sources(app PRIVATE src/events/modifiers_state_changed.c)
+   target_sources(app PRIVATE src/events/keycode_state_changed.c)
+diff --git a/app/include/zmk/runtime_keymap.h b/app/include/zmk/runtime_keymap.h
+index 252b677..b9bdc0f 100644
+--- a/app/include/zmk/runtime_keymap.h
++++ b/app/include/zmk/runtime_keymap.h
+@@ -9,6 +9,31 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include <zephyr/toolchain.h>
++
++#define ZMK_RUNTIME_KEYMAP_BUNDLE_MAGIC 0x524B4231U /* RKB1 */
++#define ZMK_RUNTIME_KEYMAP_BUNDLE_VERSION 1U
++
++/*
++ * Bundle v1 is intentionally small: one complete keyboard layer of encoded
++ * ZMK key usages. The upper byte of encoded_keycode contains the normal ZMK
++ * modifier flags, so one record can express a direct shortcut such as
++ * Cmd+Ctrl+Q without defining a new behavior in firmware.
++ */
++struct zmk_runtime_keymap_bundle_header {
++    uint32_t magic;
++    uint16_t version;
++    uint16_t header_size;
++    uint16_t layer_count;
++    uint16_t key_count;
++    uint16_t binding_size;
++    uint16_t reserved;
++} __packed;
++
++struct zmk_runtime_keymap_binding_v1 {
++    uint32_t encoded_keycode;
++} __packed;
++
+ struct zmk_runtime_keymap_info {
+     bool active;
+     uint32_t schema_version;
+@@ -33,3 +58,9 @@ int zmk_runtime_keymap_abort_update(uint32_t update_id);
+ int zmk_runtime_keymap_get_chunk(uint32_t offset, uint8_t *data, size_t capacity, size_t *len,
+                                  bool *eof);
+ int zmk_runtime_keymap_reset_settings(void);
++
++int zmk_runtime_keymap_bundle_validate(const uint8_t *data, size_t size);
++int zmk_runtime_keymap_bundle_activate(const uint8_t *data, size_t size);
++void zmk_runtime_keymap_bundle_deactivate(void);
++bool zmk_runtime_keymap_bundle_is_active(void);
++int zmk_runtime_keymap_position_state_changed(uint32_t position, bool pressed, int64_t timestamp);
+diff --git a/app/src/keymap.c b/app/src/keymap.c
+index 86732d1..8d67372 100644
+--- a/app/src/keymap.c
++++ b/app/src/keymap.c
+@@ -15,6 +15,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+ #include <zmk/keymap.h>
+ #include <zmk/physical_layouts.h>
+ #include <zmk/matrix.h>
++#include <zmk/runtime_keymap.h>
+ #include <zmk/sensors.h>
+ #include <zmk/virtual_key_position.h>
+ 
+@@ -720,6 +721,11 @@ int zmk_keymap_apply_position_state(uint8_t source, zmk_keymap_layer_id_t layer_
+ 
+ int zmk_keymap_position_state_changed(uint8_t source, uint32_t position, bool pressed,
+                                       int64_t timestamp) {
++    int runtime_ret = zmk_runtime_keymap_position_state_changed(position, pressed, timestamp);
++    if (runtime_ret != -ENOTSUP) {
++        return runtime_ret;
++    }
++
+     if (pressed) {
+         zmk_keymap_active_behavior_layer[position] = _zmk_keymap_layer_state;
+     }
+diff --git a/app/src/runtime_keymap.c b/app/src/runtime_keymap.c
+index 0596f11..7d10997 100644
+--- a/app/src/runtime_keymap.c
++++ b/app/src/runtime_keymap.c
+@@ -196,7 +196,7 @@ int zmk_runtime_keymap_validate_update(uint32_t update_id) {
+         return -EBADMSG;
+     }
+ 
+-    return 0;
++    return zmk_runtime_keymap_bundle_validate(staging.data, staging.size);
+ }
+ 
+ static int settings_save_slot_chunk(uint8_t slot, size_t chunk, const uint8_t *data, size_t len) {
+@@ -264,6 +264,13 @@ int zmk_runtime_keymap_commit_update(uint32_t update_id) {
+         slot->chunk_lengths[chunk] = expected_chunk_length(staging.size, chunk);
+     }
+ 
++    // Validation above guarantees activation cannot fail for this exact data.
++    // Keep the old slot active if an unexpected error still occurs.
++    err = zmk_runtime_keymap_bundle_activate(slot->data, slot->header.size);
++    if (err < 0) {
++        return err;
++    }
++
+     active_slot = target_slot;
+     clear_staging();
+     return 0;
+@@ -300,18 +307,20 @@ int zmk_runtime_keymap_get_chunk(uint32_t offset, uint8_t *data, size_t capacity
+ int zmk_runtime_keymap_reset_settings(void) {
+     int first_error = 0;
+ 
++    zmk_runtime_keymap_bundle_deactivate();
++
+     for (uint8_t slot = 0; slot < RUNTIME_KEYMAP_SLOT_COUNT; slot++) {
+         char key[32];
+         snprintf(key, sizeof(key), "runtime_keymap/s%u/h", slot);
+         int err = settings_delete(key);
+-        if (err < 0 && first_error == 0) {
++        if (err < 0 && err != -ENOENT && first_error == 0) {
+             first_error = err;
+         }
+ 
+         for (size_t chunk = 0; chunk < RUNTIME_KEYMAP_MAX_CHUNKS; chunk++) {
+             snprintf(key, sizeof(key), "runtime_keymap/s%u/c%u", slot, (unsigned int)chunk);
+             err = settings_delete(key);
+-            if (err < 0 && first_error == 0) {
++            if (err < 0 && err != -ENOENT && first_error == 0) {
+                 first_error = err;
+             }
+         }
+@@ -369,6 +378,14 @@ static int runtime_keymap_settings_commit(void) {
+         }
+     }
+ 
++    if (selected >= 0 &&
++        zmk_runtime_keymap_bundle_activate(slots[selected].data, slots[selected].header.size) < 0) {
++        selected = -1;
++    }
++    if (selected < 0) {
++        zmk_runtime_keymap_bundle_deactivate();
++    }
++
+     active_slot = selected;
+     return 0;
+ }
+diff --git a/Users/admin/zmk/app/src/runtime_keymap_bindings.c b/app/src/runtime_keymap_bindings.c
+new file mode 100644
+index 0000000..42d9f38
+--- /dev/null
++++ b/app/src/runtime_keymap_bindings.c
+@@ -0,0 +1,152 @@
++/*
++ * Copyright (c) 2026
++ * SPDX-License-Identifier: MIT
++ */
++
++#include <errno.h>
++#include <string.h>
++
++#include <zephyr/kernel.h>
++#include <zephyr/sys/util.h>
++
++#include <dt-bindings/zmk/hid_usage_pages.h>
++#include <zmk/events/keycode_state_changed.h>
++#include <zmk/hid.h>
++#include <zmk/keymap.h>
++#include <zmk/keys.h>
++#include <zmk/matrix.h>
++#include <zmk/runtime_keymap.h>
++
++static const uint8_t *active_bundle;
++static bool runtime_bindings_active;
++static bool captured_positions[ZMK_KEYMAP_LEN];
++static uint32_t pressed_keycodes[ZMK_KEYMAP_LEN];
++
++static bool encoded_keycode_is_valid(uint32_t encoded_keycode) {
++    if (encoded_keycode == 0) {
++        return true;
++    }
++
++    uint16_t usage_page = ZMK_HID_USAGE_PAGE(encoded_keycode);
++    const uint16_t keycode = ZMK_HID_USAGE_ID(encoded_keycode);
++    if (usage_page == 0) {
++        usage_page = HID_USAGE_KEY;
++    }
++
++    if (usage_page != HID_USAGE_KEY || keycode == 0 ||
++        keycode > ZMK_HID_KEYBOARD_NKRO_MAX_USAGE) {
++        return false;
++    }
++
++    // A modifier key uses ZMK's explicit-modifier path and therefore cannot
++    // also carry implicit modifiers of its own.
++    return !is_mod(usage_page, keycode) || SELECT_MODS(encoded_keycode) == 0;
++}
++
++static int read_bundle_header(const uint8_t *data, size_t size,
++                              struct zmk_runtime_keymap_bundle_header *header) {
++    if (!data || size < sizeof(*header)) {
++        return -EINVAL;
++    }
++
++    memcpy(header, data, sizeof(*header));
++    if (header->magic != ZMK_RUNTIME_KEYMAP_BUNDLE_MAGIC ||
++        header->version != ZMK_RUNTIME_KEYMAP_BUNDLE_VERSION ||
++        header->header_size != sizeof(*header) || header->layer_count != 1 ||
++        header->key_count != ZMK_KEYMAP_LEN ||
++        header->binding_size != sizeof(struct zmk_runtime_keymap_binding_v1) ||
++        header->reserved != 0) {
++        return -EINVAL;
++    }
++
++    const size_t expected_size =
++        header->header_size + ((size_t)header->layer_count * header->key_count * header->binding_size);
++    return size == expected_size ? 0 : -EMSGSIZE;
++}
++
++static uint32_t bundle_keycode_at(const uint8_t *bundle, uint32_t position) {
++    struct zmk_runtime_keymap_binding_v1 binding;
++    const size_t offset = sizeof(struct zmk_runtime_keymap_bundle_header) +
++                          ((size_t)position * sizeof(binding));
++    memcpy(&binding, &bundle[offset], sizeof(binding));
++    return binding.encoded_keycode;
++}
++
++int zmk_runtime_keymap_bundle_validate(const uint8_t *data, size_t size) {
++    struct zmk_runtime_keymap_bundle_header header;
++    int err = read_bundle_header(data, size, &header);
++    if (err < 0) {
++        return err;
++    }
++
++    for (uint32_t position = 0; position < header.key_count; position++) {
++        if (!encoded_keycode_is_valid(bundle_keycode_at(data, position))) {
++            return -EINVAL;
++        }
++    }
++
++    return 0;
++}
++
++static void release_runtime_keycodes(void) {
++    const int64_t timestamp = k_uptime_get();
++    for (uint32_t position = 0; position < ZMK_KEYMAP_LEN; position++) {
++        const uint32_t encoded_keycode = pressed_keycodes[position];
++        if (encoded_keycode != 0) {
++            (void)raise_zmk_keycode_state_changed_from_encoded(encoded_keycode, false, timestamp);
++            pressed_keycodes[position] = 0;
++        }
++    }
++}
++
++int zmk_runtime_keymap_bundle_activate(const uint8_t *data, size_t size) {
++    int err = zmk_runtime_keymap_bundle_validate(data, size);
++    if (err < 0) {
++        return err;
++    }
++
++    // Releasing currently-held runtime keys before the pointer swap prevents a
++    // live update from leaving a key or modifier held under the old mapping.
++    release_runtime_keycodes();
++    active_bundle = data;
++    runtime_bindings_active = true;
++    return 0;
++}
++
++void zmk_runtime_keymap_bundle_deactivate(void) {
++    release_runtime_keycodes();
++    active_bundle = NULL;
++    runtime_bindings_active = false;
++}
++
++bool zmk_runtime_keymap_bundle_is_active(void) { return runtime_bindings_active; }
++
++int zmk_runtime_keymap_position_state_changed(uint32_t position, bool pressed, int64_t timestamp) {
++    if (position >= ZMK_KEYMAP_LEN) {
++        return runtime_bindings_active ? -EINVAL : -ENOTSUP;
++    }
++
++    if (pressed) {
++        if (!runtime_bindings_active) {
++            return -ENOTSUP;
++        }
++
++        const uint32_t encoded_keycode = bundle_keycode_at(active_bundle, position);
++        captured_positions[position] = true;
++        pressed_keycodes[position] = encoded_keycode;
++        return encoded_keycode == 0
++                   ? 0
++                   : raise_zmk_keycode_state_changed_from_encoded(encoded_keycode, true, timestamp);
++    }
++
++    if (!runtime_bindings_active && !captured_positions[position]) {
++        return -ENOTSUP;
++    }
++
++    const uint32_t encoded_keycode = pressed_keycodes[position];
++    pressed_keycodes[position] = 0;
++    captured_positions[position] = false;
++    return encoded_keycode == 0
++               ? 0
++               : raise_zmk_keycode_state_changed_from_encoded(encoded_keycode, false, timestamp);
++}
+diff --git a/app/src/studio/keymap_subsystem.c b/app/src/studio/keymap_subsystem.c
+index e963f42..330956a 100644
+--- a/app/src/studio/keymap_subsystem.c
++++ b/app/src/studio/keymap_subsystem.c
+@@ -112,6 +112,16 @@ static void populate_keymap_extra_props(zmk_keymap_Keymap *keymap) {
+     }
+ }
+ 
++static bool encode_runtime_features(pb_ostream_t *stream, const pb_field_t *field,
++                                    void *const *arg) {
++    (void)arg;
++    if (!pb_encode_tag_for_field(stream, field)) {
++        return false;
++    }
++
++    return pb_encode_varint(stream, zmk_keymap_RuntimeFeature_RUNTIME_FEATURE_BINDINGS);
++}
++
+ /*
+  * This is deliberately a capability advertisement only. Subsequent runtime
+  * keymap patches add feature bits and pool limits once their corresponding
+@@ -121,8 +131,10 @@ static void populate_runtime_capabilities(zmk_keymap_Keymap *keymap) {
+     keymap->has_runtime_capabilities = true;
+     keymap->runtime_capabilities.protocol_version = 1;
+ #if IS_ENABLED(CONFIG_ZMK_STUDIO_RUNTIME_KEYMAP)
++    keymap->runtime_capabilities.features.funcs.encode = encode_runtime_features;
+     keymap->runtime_capabilities.supports_transactions = true;
+     keymap->runtime_capabilities.supports_persistence = true;
++    keymap->runtime_capabilities.max_layers = 1;
+ #endif
+ }
+ 
+diff --git a/app/src/studio/runtime_subsystem.c b/app/src/studio/runtime_subsystem.c
+index 0027466..d76dd9f 100644
+--- a/app/src/studio/runtime_subsystem.c
++++ b/app/src/studio/runtime_subsystem.c
+@@ -45,6 +45,8 @@ static zmk_runtime_RuntimeUpdateError runtime_error_from_errno(int err) {
+         return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_INCOMPLETE;
+     case -EBADMSG:
+         return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_CHECKSUM;
++    case -EINVAL:
++        return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_INVALID_CONFIG;
+     default:
+         return zmk_runtime_RuntimeUpdateError_RUNTIME_UPDATE_ERR_PERSISTENCE;
+     }
+@@ -130,6 +132,11 @@ zmk_studio_Response get_config_chunk(const zmk_studio_Request *req) {
+     return RUNTIME_RESPONSE(get_config_chunk, chunk);
+ }
+ 
++zmk_studio_Response reset_config(const zmk_studio_Request *req) {
++    return RUNTIME_RESPONSE(reset_config,
++                            runtime_update_result(zmk_runtime_keymap_reset_settings()));
++}
++
+ static int runtime_keymap_settings_reset(void) { return zmk_runtime_keymap_reset_settings(); }
+ 
+ ZMK_RPC_SUBSYSTEM_SETTINGS_RESET(runtime, runtime_keymap_settings_reset);
+@@ -141,3 +148,4 @@ ZMK_RPC_SUBSYSTEM_HANDLER(runtime, validate_update, ZMK_STUDIO_RPC_HANDLER_SECUR
+ ZMK_RPC_SUBSYSTEM_HANDLER(runtime, commit_update, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ ZMK_RPC_SUBSYSTEM_HANDLER(runtime, abort_update, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ ZMK_RPC_SUBSYSTEM_HANDLER(runtime, get_config_chunk, ZMK_STUDIO_RPC_HANDLER_SECURED);
++ZMK_RPC_SUBSYSTEM_HANDLER(runtime, reset_config, ZMK_STUDIO_RPC_HANDLER_SECURED);

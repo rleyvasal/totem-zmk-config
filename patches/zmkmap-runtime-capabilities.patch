@@ -1,0 +1,133 @@
+diff --git a/apps/web/index.html b/apps/web/index.html
+index 060a4c8..21f653a 100644
+--- a/apps/web/index.html
++++ b/apps/web/index.html
+@@ -68,7 +68,7 @@
+         <div class="inspect" id="inspect">
+           <div>Click a key to inspect its behavior.</div>
+         </div>
+-        <p class="flash-hint">
++        <p id="studio-runtime-hint" class="flash-hint">
+           <strong>Live Apply</strong> works for existing bindings only.
+           New macros, combos, layers, and behaviors require Download → flash.
+         </p>
+diff --git a/src/connection/studio.js b/src/connection/studio.js
+index 264ce1d..5238a69 100644
+--- a/src/connection/studio.js
++++ b/src/connection/studio.js
+@@ -125,10 +125,25 @@ function parseLayer(fields) {
+   };
+ }
+ 
++function parseRuntimeCapabilities(fields) {
++  return {
++    protocolVersion: fieldU32(fields, 1),
++    features: fieldNums(fields, 2),
++    maxLayers: fieldU32(fields, 3),
++    maxBehaviors: fieldU32(fields, 4),
++    maxCombos: fieldU32(fields, 5),
++    maxMacroSteps: fieldU32(fields, 6),
++    supportsTransactions: fieldU32(fields, 7) !== 0,
++    supportsPersistence: fieldU32(fields, 8) !== 0,
++  };
++}
++
+ function parseKeymap(fields) {
++  const runtimeCapabilities = fieldMsgs(fields, 4)[0];
+   return {
+     layers: fieldMsgs(fields, 1).map(parseLayer),
+     availableLayers: fieldU32(fields, 2),
++    runtimeCapabilities: runtimeCapabilities ? parseRuntimeCapabilities(runtimeCapabilities) : null,
+   };
+ }
+ 
+@@ -188,6 +203,7 @@ export class StudioClient {
+     this.deviceName = "";
+     this.behaviors = [];
+     this.layers = [];
++    this.runtimeCapabilities = null;
+     this._loop = this.readLoop();
+   }
+ 
+@@ -277,6 +293,7 @@ export class StudioClient {
+   async getKeymap() {
+     const km = await this.call((id) => encodeKeymap(id, 1), 10000);
+     this.layers = km.keymap?.layers || [];
++    this.runtimeCapabilities = km.keymap?.runtimeCapabilities || null;
+     return this.layers;
+   }
+ 
+diff --git a/src/ui/app.js b/src/ui/app.js
+index 689a6cc..4dd9f85 100644
+--- a/src/ui/app.js
++++ b/src/ui/app.js
+@@ -200,10 +200,23 @@ function setStudioLabel(text, kind = "") {
+   el.className = `studio-state ${kind}`.trim();
+ }
+ 
++function studioRuntimeHint(client) {
++  const caps = client?.runtimeCapabilities;
++  if (!caps) {
++    return "Live Apply works for existing bindings only. New macros, combos, layers, and behaviors require Download → flash.";
++  }
++  if (!caps.features?.length) {
++    return `Runtime keymap extension protocol v${caps.protocolVersion} detected. Dynamic definitions are not enabled in this firmware build yet.`;
++  }
++  return `Runtime keymap extension v${caps.protocolVersion} is available. The editor will enable each live feature supported by this firmware.`;
++}
++
+ function updateStudioButtons() {
+   const on = !!state.studio;
+   $("studio-connect").textContent = on ? "Disconnect" : "Connect";
+   $("studio-apply").disabled = !on;
++  const hint = $("studio-runtime-hint");
++  if (hint) hint.textContent = studioRuntimeHint(state.studio);
+ }
+ 
+ function updateHistoryButtons() {
+diff --git a/tests/test_studio.mjs b/tests/test_studio.mjs
+index b566509..71ab095 100644
+--- a/tests/test_studio.mjs
++++ b/tests/test_studio.mjs
+@@ -1,5 +1,5 @@
+-import { encodeUint32, encodeSint32, zigzag32, unzigzag32, decodeFields, fieldU32, concatBytes } from "../src/connection/pb.js";
+-import { frameBytes, deframeAll } from "../src/connection/studio.js";
++import { encodeBool, encodeSub, encodeUint32, encodeSint32, zigzag32, unzigzag32, decodeFields, fieldU32, concatBytes } from "../src/connection/pb.js";
++import { frameBytes, deframeAll, parseResponse } from "../src/connection/studio.js";
+ import { hidUsage, parseBindingText, bindingToCells, cellsToBinding, hidToken, findBehavior, isEmptyStudioCell, isPlaceholderBinding } from "../src/connection/studio-bind.js";
+ 
+ if (hidUsage("A") !== 0x070004) throw new Error(`A ${hidUsage("A").toString(16)}`);
+@@ -114,4 +114,33 @@ const sint = encodeSint32(1, 7);
+ const sf = decodeFields(sint);
+ if (unzigzag32(fieldU32(sf, 1)) !== 7) throw new Error("sint field");
+ 
++const runtimeCapabilities = concatBytes([
++  encodeUint32(1, 1),
++  encodeUint32(2, 1),
++  encodeUint32(2, 3),
++  encodeUint32(3, 5),
++  encodeUint32(4, 12),
++  encodeUint32(5, 16),
++  encodeUint32(6, 96),
++  encodeBool(7, true),
++  encodeBool(8, true),
++]);
++const runtimeResponse = concatBytes([
++  encodeSub(1, concatBytes([
++    encodeUint32(1, 88),
++    encodeSub(5, encodeSub(1, encodeSub(4, runtimeCapabilities))),
++  ])),
++]);
++const runtimeParsed = parseResponse(runtimeResponse);
++const caps = runtimeParsed.keymap?.runtimeCapabilities;
++if (!caps || caps.protocolVersion !== 1 || caps.features.join(",") !== "1,3") {
++  throw new Error(`runtime capabilities ${JSON.stringify(caps)}`);
++}
++if (caps.maxLayers !== 5 || caps.maxBehaviors !== 12 || caps.maxCombos !== 16 || caps.maxMacroSteps !== 96) {
++  throw new Error(`runtime limits ${JSON.stringify(caps)}`);
++}
++if (!caps.supportsTransactions || !caps.supportsPersistence) {
++  throw new Error(`runtime support flags ${JSON.stringify(caps)}`);
++}
++
+ console.log("studio ok");

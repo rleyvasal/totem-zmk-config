@@ -1,0 +1,46 @@
+diff --git a/proto/zmk/keymap.proto b/proto/zmk/keymap.proto
+index 103bbf7..d75a166 100644
+--- a/proto/zmk/keymap.proto
++++ b/proto/zmk/keymap.proto
+@@ -177,6 +177,34 @@ message Keymap {
+     repeated Layer layers = 1;
+     uint32 available_layers = 2;
+     uint32 max_layer_name_length = 3;
++    RuntimeCapabilities runtime_capabilities = 4;
++}
++
++// Describes the runtime-keymap features compiled into the firmware. Clients
++// must treat an omitted RuntimeCapabilities message as an unpatched firmware.
++// The first extension patch advertises only the protocol version; later patches
++// add features and non-zero pool limits as their runtime engines land.
++message RuntimeCapabilities {
++    uint32 protocol_version = 1;
++    repeated RuntimeFeature features = 2;
++    uint32 max_layers = 3;
++    uint32 max_behaviors = 4;
++    uint32 max_combos = 5;
++    uint32 max_macro_steps = 6;
++    bool supports_transactions = 7;
++    bool supports_persistence = 8;
++}
++
++enum RuntimeFeature {
++    RUNTIME_FEATURE_UNSPECIFIED = 0;
++    RUNTIME_FEATURE_BINDINGS = 1;
++    RUNTIME_FEATURE_MACROS = 2;
++    RUNTIME_FEATURE_COMBOS = 3;
++    RUNTIME_FEATURE_HOLD_TAPS = 4;
++    RUNTIME_FEATURE_MOD_MORPHS = 5;
++    RUNTIME_FEATURE_TAP_DANCES = 6;
++    RUNTIME_FEATURE_CONDITIONAL_LAYERS = 7;
++    RUNTIME_FEATURE_INPUT = 8;
+ }
+ 
+ message Layer {
+@@ -209,4 +237,4 @@ message KeyPhysicalAttrs {
+     sint32 r = 5;
+     sint32 rx = 6;
+     sint32 ry = 7;
+-}
+\ No newline at end of file
++}

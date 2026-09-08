@@ -1,0 +1,136 @@
+diff --git a/proto/zmk/studio.proto b/proto/zmk/studio.proto
+index 2ec0535..884cfbb 100644
+--- a/proto/zmk/studio.proto
++++ b/proto/zmk/studio.proto
+@@ -7,6 +7,7 @@ import "meta.proto";
+ import "core.proto";
+ import "behaviors.proto";
+ import "keymap.proto";
++import "runtime.proto";
+ 
+ message Request {
+     uint32 request_id = 1;
+@@ -15,6 +16,7 @@ message Request {
+         zmk.core.Request core = 3;
+         zmk.behaviors.Request behaviors = 4;
+         zmk.keymap.Request keymap = 5;
++        zmk.runtime.Request runtime = 6;
+     }
+ }
+ 
+@@ -32,6 +34,7 @@ message RequestResponse {
+         zmk.core.Response core = 3;
+         zmk.behaviors.Response behaviors = 4;
+         zmk.keymap.Response keymap = 5;
++        zmk.runtime.Response runtime = 6;
+     }
+ }
+ 
+diff --git a/proto/zmk/runtime.proto b/proto/zmk/runtime.proto
+new file mode 100644
+index 0000000..7f9d904
+--- /dev/null
++++ b/proto/zmk/runtime.proto
+@@ -0,0 +1,94 @@
++syntax = "proto3";
++
++package zmk.runtime;
++
++// Runtime-keymap bundle transfer. The bundle payload is intentionally opaque
++// to this transport layer: later firmware increments define and validate the
++// record format before advertising a corresponding RuntimeFeature bit.
++message Request {
++    oneof request_type {
++        bool get_config_info = 1;
++        BeginRuntimeUpdateRequest begin_update = 2;
++        UploadRuntimeChunkRequest upload_chunk = 3;
++        RuntimeUpdateRequest validate_update = 4;
++        RuntimeUpdateRequest commit_update = 5;
++        RuntimeUpdateRequest abort_update = 6;
++        GetRuntimeConfigChunkRequest get_config_chunk = 7;
++    }
++}
++
++message Response {
++    oneof response_type {
++        RuntimeConfigInfo get_config_info = 1;
++        RuntimeUpdateResult begin_update = 2;
++        RuntimeUpdateResult upload_chunk = 3;
++        RuntimeUpdateResult validate_update = 4;
++        RuntimeUpdateResult commit_update = 5;
++        RuntimeUpdateResult abort_update = 6;
++        RuntimeConfigChunk get_config_chunk = 7;
++    }
++}
++
++message RuntimeConfigInfo {
++    bool active = 1;
++    uint32 schema_version = 2;
++    uint32 revision = 3;
++    uint32 size = 4;
++    uint32 checksum = 5;
++    uint32 staging_update_id = 6;
++    uint32 staging_size = 7;
++    uint32 staging_received_size = 8;
++}
++
++message BeginRuntimeUpdateRequest {
++    uint32 schema_version = 1;
++    uint32 revision = 2;
++    uint32 size = 3;
++    uint32 checksum = 4;
++}
++
++message UploadRuntimeChunkRequest {
++    uint32 update_id = 1;
++    uint32 offset = 2;
++    bytes data = 3;
++}
++
++message RuntimeUpdateRequest {
++    uint32 update_id = 1;
++}
++
++message GetRuntimeConfigChunkRequest {
++    uint32 offset = 1;
++}
++
++message RuntimeConfigChunk {
++    RuntimeConfigInfo info = 1;
++    uint32 offset = 2;
++    bytes data = 3;
++    bool eof = 4;
++    // Zero means success. A nonzero value makes a missing active configuration
++    // distinguishable from a valid empty response.
++    RuntimeUpdateError error = 5;
++}
++
++message RuntimeUpdateResult {
++    oneof result {
++        RuntimeConfigInfo ok = 1;
++        RuntimeUpdateError err = 2;
++    }
++}
++
++enum RuntimeUpdateError {
++    RUNTIME_UPDATE_ERR_OK = 0;
++    RUNTIME_UPDATE_ERR_NOT_SUPPORTED = 1;
++    RUNTIME_UPDATE_ERR_BUSY = 2;
++    RUNTIME_UPDATE_ERR_INVALID_UPDATE = 3;
++    RUNTIME_UPDATE_ERR_INVALID_SCHEMA = 4;
++    RUNTIME_UPDATE_ERR_INVALID_SIZE = 5;
++    RUNTIME_UPDATE_ERR_INVALID_OFFSET = 6;
++    RUNTIME_UPDATE_ERR_CONFLICTING_DATA = 7;
++    RUNTIME_UPDATE_ERR_INCOMPLETE = 8;
++    RUNTIME_UPDATE_ERR_CHECKSUM = 9;
++    RUNTIME_UPDATE_ERR_PERSISTENCE = 10;
++    RUNTIME_UPDATE_ERR_NO_ACTIVE_CONFIG = 11;
++}
+diff --git a/proto/zmk/runtime.options.in b/proto/zmk/runtime.options.in
+new file mode 100644
+index 0000000..f16e649
+--- /dev/null
++++ b/proto/zmk/runtime.options.in
+@@ -0,0 +1,2 @@
++zmk.runtime.UploadRuntimeChunkRequest.data max_size:@CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE@
++zmk.runtime.RuntimeConfigChunk.data max_size:@CONFIG_ZMK_RUNTIME_KEYMAP_CHUNK_SIZE@

@@ -1,0 +1,57 @@
+diff --git a/app/src/studio/keymap_subsystem.c b/app/src/studio/keymap_subsystem.c
+index 1d51975c..26884f2e 100644
+--- a/app/src/studio/keymap_subsystem.c
++++ b/app/src/studio/keymap_subsystem.c
+@@ -112,6 +112,16 @@ static void populate_keymap_extra_props(zmk_keymap_Keymap *keymap) {
+     }
+ }
+ 
++/*
++ * This is deliberately a capability advertisement only. Subsequent runtime
++ * keymap patches add feature bits and pool limits once their corresponding
++ * engines, validation, and settings persistence exist.
++ */
++static void populate_runtime_capabilities(zmk_keymap_Keymap *keymap) {
++    keymap->has_runtime_capabilities = true;
++    keymap->runtime_capabilities.protocol_version = 1;
++}
++
+ zmk_studio_Response get_keymap(const zmk_studio_Request *req) {
+     LOG_DBG("");
+     zmk_keymap_Keymap resp = zmk_keymap_Keymap_init_zero;
+@@ -119,6 +129,7 @@ zmk_studio_Response get_keymap(const zmk_studio_Request *req) {
+     resp.layers.funcs.encode = encode_keymap_layers;
+ 
+     populate_keymap_extra_props(&resp);
++    populate_runtime_capabilities(&resp);
+ 
+     return KEYMAP_RESPONSE(get_keymap, resp);
+ }
+diff --git a/app/west.yml b/app/west.yml
+index 0d9d1e02..87b39994 100644
+--- a/app/west.yml
++++ b/app/west.yml
+@@ -4,6 +4,8 @@ manifest:
+       url-base: https://github.com/zephyrproject-rtos
+     - name: zmkfirmware
+       url-base: https://github.com/zmkfirmware
++    - name: rleyvasal
++      url-base: https://github.com/rleyvasal
+   projects:
+     - name: zephyr
+       remote: zmkfirmware
+@@ -39,9 +41,11 @@ manifest:
+       path: modules/lib/gui/lvgl
+       remote: zmkfirmware
+     - name: zmk-studio-messages
+-      revision: 6cb4c283e76209d59c45fbcb218800cd19e9339d
++      # Runtime keymap capability protocol v1. Keep this as a full SHA so the
++      # firmware and ZMK Map wire format remain reproducible.
++      revision: 5af7b4fcdeed37cd9681709471b707c460713bdc
+       path: modules/msgs/zmk-studio-messages
+-      remote: zmkfirmware
++      remote: rleyvasal
+   group-filter: [+optional]
+   self:
+     west-commands: scripts/west-commands.yml
+diff --git a/app/src/studio/keymap_subsystem.c b/app/src/studio/keymap_subsystem.c

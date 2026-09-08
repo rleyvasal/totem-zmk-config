@@ -187,7 +187,55 @@ branch name, and push the config repo.
 
 ## Planned Studio runtime extension
 
-[`zmk-studio-runtime-extension.md`](zmk-studio-runtime-extension.md) defines
-the `studio-extension` branch plan for runtime-configurable ZMK Studio
-behaviors, macros, combos, and hold-taps. It is a design document until the
-corresponding firmware patch series is implemented.
+[`zmk-runtime-behavior-model.md`](zmk-runtime-behavior-model.md) is the
+architecture RFC for a runtime behavior registry, behavior-object database,
+executor, and transactional persistence. It is the implementation target for
+full live configurability. [`zmk-studio-runtime-extension.md`](zmk-studio-runtime-extension.md)
+documents the earlier simple-binding prototype and its patch history.
+[`zmk-runtime-config-v2-schema.md`](zmk-runtime-config-v2-schema.md) locks the
+first implementation contract: its canonical bytes, registry IDs, capability
+requirements, and transaction rules.
+
+### Studio runtime extension — first three implementation increments
+
+The capability handshake, safe transport/persistence layer, and first executable
+runtime binding slice are ready for review.
+
+- [`zmk-studio-messages-runtime-capabilities.patch`](zmk-studio-messages-runtime-capabilities.patch)
+  extends `Keymap` with an optional `RuntimeCapabilities` message.
+- [`zmk-runtime-capabilities.patch`](zmk-runtime-capabilities.patch) makes the
+  firmware return runtime protocol version `1` from its existing `get_keymap`
+  response and pins `app/west.yml` to
+  [`rleyvasal/zmk-studio-messages@5af7b4f`](https://github.com/rleyvasal/zmk-studio-messages/commit/5af7b4fcdeed37cd9681709471b707c460713bdc).
+- [`zmkmap-runtime-capabilities.patch`](zmkmap-runtime-capabilities.patch)
+  decodes the optional capability message and displays its state in ZMK Map.
+- [`zmk-studio-messages-runtime-storage.patch`](zmk-studio-messages-runtime-storage.patch)
+  adds the secured Runtime RPC messages: staged upload, validation, commit,
+  abort, information, and chunked read-back.
+- [`zmk-runtime-storage-transactions.patch`](zmk-runtime-storage-transactions.patch)
+  implements a fixed 2 KB bundle store: checksummed staging, 32-byte chunks,
+  two persistent NVS slots, and header-last atomic activation. It advertises
+  transaction and persistence support.
+- [`zmk-studio-messages-runtime-simple-bindings.patch`](zmk-studio-messages-runtime-simple-bindings.patch)
+  adds the explicit malformed-runtime-config error used by the first executor
+  plus a runtime-only reset RPC for safe recovery.
+- [`zmk-runtime-simple-bindings.patch`](zmk-runtime-simple-bindings.patch)
+  validates and executes one complete layer of simple keyboard HID usages. The
+  encoded modifier byte allows direct shortcuts such as `Cmd + Ctrl + Q`.
+
+An unpatched keyboard omits the capability message entirely, allowing ZMK Map
+to distinguish legacy Studio firmware without an incompatible new request.
+This increment advertises only `BINDINGS` and a one-layer limit. It deliberately
+does not advertise macros, combos, hold-taps, or any other behavior until the
+firmware can execute and validate those records.
+
+Pre-flash verification for the storage increment includes a Totem left-half
+build (279 KB flash / 85.7 KB RAM) and a host test that compiles the production
+storage source with a fake settings backend. The test covers reverse-order
+chunks, checksum rejection, a forced write failure during commit, reboot
+recovery of the previous bundle, a malformed-bundle rejection, and a successful
+persist/reboot cycle. A second host test verifies normal keys, `Cmd + Ctrl + Q`,
+and a live mapping swap while a key is held. The current simple-binding image
+has not been flashed yet. Its hardware smoke test uploads a harmless all-`B`
+test layer, checks read-back, then uses the runtime-only reset RPC to restore
+the stock keymap without clearing unrelated Studio settings.
