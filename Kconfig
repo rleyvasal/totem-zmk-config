@@ -185,14 +185,12 @@ config TOTEM_STUDIO_CONSOLE
 config TOTEM_USB_QUIET_HOST
 	bool "Drop host BLE while USB is providing HID (keep the split link)"
 	depends on ZMK_USB && ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
-	default y
+	default n
 	help
-	  nRF52840 USB HID stalls when host BLE is still advertising or when
-	  exclusive-host is evicting a second computer. While the cable is up,
-	  refuse host advertising and disconnect Mac/Windows links. The split
-	  central connection to the right half stays up so both halves type over
-	  USB. Unplugging USB resumes host advertising. Module src/usb_host_quiet.c
-	  plus ble.c treating USB power as ads-suppressed.
+	  Nuclear option: while the cable is up, stop host advertising and drop
+	  Mac/Windows links. Hides host BLE from the USB console, so it is not
+	  the USB-typing fix. Leave off; exclusive-host skips eviction when HID
+	  is USB instead. Module src/usb_host_quiet.c.
 
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
@@ -377,6 +375,28 @@ config TOTEM_THRASH_WINDOW_SEC
 	depends on TOTEM_THRASH_DETECT
 	default 10
 	range 3 60
+
+config TOTEM_BG_EVICT_IGNORE_MS
+	int "Ignore a background profile after one evict (milliseconds)"
+	depends on TOTEM_EXCLUSIVE_HOST
+	default 10000
+	range 0 60000
+	help
+	  After kicking a non-active host, do not kick that profile again for
+	  this long. Stops the Hz-rate Windows flap while profile 0 is selected
+	  and Mac is down. 0 = old evict-on-every-connect. Profile switch still
+	  evicts immediately.
+
+config TOTEM_BG_EVICT_CAP
+	int "Stop background evicts after this many in the thrash window"
+	depends on TOTEM_EXCLUSIVE_HOST && TOTEM_THRASH_DETECT
+	default 4
+	range 1 16
+	help
+	  If exclusive-host has already kicked this many background hosts in
+	  TOTEM_THRASH_WINDOW_SEC, leave the extra link up and printk
+	  totem_ble thrash_cap. A quiet extra Windows connection is better than
+	  a connect/evict storm that stalls USB HID.
 
 config TOTEM_HOST_EVENT_LOG
 	bool "Multi-profile host event ring (RAM + settings) with USB dump"

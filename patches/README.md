@@ -3,18 +3,6 @@
 `zmk-ble.patch` is a small change to ZMK's `app/src/ble.c`, central-half only,
 gated behind `CONFIG_TOTEM_*` flags (defined in this repo's `Kconfig`):
 
-**USB quiet host** (`CONFIG_TOTEM_USB_QUIET_HOST`, central-only):
-
-- While the left half is on USB, **do not advertise to computers** and **drop
-  Mac/Windows BLE links**. USB HID and the nRF52 radio cannot share the chip
-  reliably; host-BLE thrash (exclusive-host evicting the other PC) is what made
-  USB typing stall or stop.
-- The **split link stays up** (central role to the right half). Charging the
-  right half over USB does not take this path.
-- Unplugging USB resumes host advertising. Implemented in `ble.c`
-  (`zmk_usb_is_powered()` → `desired_adv = NONE`) plus
-  `src/usb_host_quiet.c`.
-
 **Advertising throttle** (`CONFIG_TOTEM_ADV_THROTTLE`):
 
 - When the **selected** profile's device has been disconnected for

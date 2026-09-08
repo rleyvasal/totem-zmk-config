@@ -17,7 +17,7 @@
 #include <zmk/event_manager.h>
 #include <zmk/events/usb_conn_state_changed.h>
 
-#include <totem_usb_quiet.h>
+#include <zmk/usb.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) && IS_ENABLED(CONFIG_TOTEM_USB_QUIET_HOST)
 
@@ -42,7 +42,7 @@ static void drop_host_conn(struct bt_conn *conn, void *data) {
 static void usb_host_quiet_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
-    if (!totem_usb_owns_hid()) {
+    if (!zmk_usb_is_powered()) {
         printk("totem_ble usb_quiet host_ble=on (cable gone)\n");
         return;
     }

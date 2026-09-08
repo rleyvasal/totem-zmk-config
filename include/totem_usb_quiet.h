@@ -2,16 +2,11 @@
 
 #include <stdbool.h>
 
-#if IS_ENABLED(CONFIG_ZMK_USB)
-#include <zmk/usb.h>
-#endif
+#include <zmk/endpoints.h>
+#include <zmk/endpoints_types.h>
 
-/* True when the left half is on USB power/HID. Split BLE to the right half
- * must stay up; host advertising and host connections must not. */
-static inline bool totem_usb_owns_hid(void) {
-#if IS_ENABLED(CONFIG_ZMK_USB)
-    return zmk_usb_is_powered();
-#else
-    return false;
-#endif
+/* True when HID reports are going to USB. Host BLE may still advertise;
+ * exclusive-host must not evict (that storm is what stalls USB typing). */
+static inline bool totem_hid_is_usb(void) {
+    return zmk_endpoint_get_selected().transport == ZMK_TRANSPORT_USB;
 }

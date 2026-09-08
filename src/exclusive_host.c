@@ -2,8 +2,10 @@
  * Exclusive host: keep only the active profile's computer connected.
  *
  * Known non-active profiles (idx >= 0 && idx != active) are dropped as soon as
- * they are identified -- without waiting for encryption. That stops Windows
- * thrashing open ads while Mac is selected.
+ * they are identified -- without waiting for encryption. While HID is USB,
+ * eviction is skipped (it cannot leak keystrokes and the evict storm stalls
+ * the cable). While HID is BLE, a kicked profile is ignored for
+ * TOTEM_BG_EVICT_IGNORE_MS so Windows cannot flap at Hz when Mac is down.
  *
  * CRITICAL: idx < 0 (unresolved address) is NEVER dropped, even on the force
  * fallback. That state is:
@@ -26,6 +28,8 @@
  * Logging uses stable totem_ble tokens for dual-host triage (see DEBUGGING-NOTES).
  */
 
+#include <string.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/bluetooth/bluetooth.h>
@@ -45,6 +49,34 @@ LOG_MODULE_REGISTER(exclusive_host, CONFIG_ZMK_LOG_LEVEL);
 #include <totem_ble_print.h>
 
 #define EXCLUSIVE_HOST_RETRY_MS 150
+
+static int64_t bg_ignore_until[ZMK_BLE_PROFILE_COUNT];
+static bool thrash_cap_logged;
+
+static void bg_clear_ignores(void) {
+    memset(bg_ignore_until, 0, sizeof(bg_ignore_until));
+    thrash_cap_logged = false;
+}
+
+static bool bg_should_ignore(int idx) {
+    if (idx < 0 || idx >= ZMK_BLE_PROFILE_COUNT) {
+        return false;
+    }
+    if (bg_ignore_until[idx] == 0) {
+        return false;
+    }
+    return k_uptime_get() < bg_ignore_until[idx];
+}
+
+static void bg_note_evict(int idx) {
+#if CONFIG_TOTEM_BG_EVICT_IGNORE_MS > 0
+    if (idx >= 0 && idx < ZMK_BLE_PROFILE_COUNT) {
+        bg_ignore_until[idx] = k_uptime_get() + CONFIG_TOTEM_BG_EVICT_IGNORE_MS;
+    }
+#else
+    ARG_UNUSED(idx);
+#endif
+}
 
 /* Only used to re-check RPA → profile mapping after a short delay; does not
  * force-drop unresolved peers (see drop_if_non_active_host). */
@@ -188,9 +220,9 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     if (info.role != BT_CONN_ROLE_PERIPHERAL) {
         return;
     }
-    if (totem_usb_owns_hid()) {
-        /* USB HID is active; usb_host_quiet.c drops host links. Do not start
-         * an exclusive-host evict loop on the cable. */
+    if (totem_hid_is_usb()) {
+        /* HID is USB: eviction does not protect keystrokes, it only generates
+         * a connect/disconnect radio storm that stalls the cable. */
         return;
     }
 
@@ -231,9 +263,31 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     }
 #endif
 
-    /* Known non-active profile: drop immediately (no L2 wait). force unused for
-     * this path but kept for API compatibility with the delayed fallback. */
-    ARG_UNUSED(force);
+    /* Known non-active profile. force=true (profile switch) always evicts.
+     * Otherwise one kick plus ignore, then a thrash cap: a quiet extra Windows
+     * link is better than Hz-rate flap. */
+    if (!force) {
+        if (bg_should_ignore(idx)) {
+            static int64_t last_ignore_log_ms;
+            int64_t now = k_uptime_get();
+            if (last_ignore_log_ms == 0 || (now - last_ignore_log_ms) >= 5000) {
+                last_ignore_log_ms = now;
+                TOTEM_BLE_INF("totem_ble bg_evict_ignore idx=%d active=%d", idx, active);
+            }
+            return;
+        }
+#if IS_ENABLED(CONFIG_TOTEM_THRASH_DETECT)
+        uint32_t win = thrash_win_count();
+        if (win >= CONFIG_TOTEM_BG_EVICT_CAP) {
+            if (!thrash_cap_logged) {
+                thrash_cap_logged = true;
+                TOTEM_BLE_WRN("totem_ble thrash_cap count=%u cap=%d — leaving bg host idx=%d",
+                              win, CONFIG_TOTEM_BG_EVICT_CAP, idx);
+            }
+            return;
+        }
+#endif
+    }
 
     char addr[BT_ADDR_LE_STR_LEN];
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
@@ -243,6 +297,7 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
         return;
     }
 
+    bg_note_evict(idx);
     thrash_note_bg_evict();
     uint32_t tw = thrash_win_count();
     TOTEM_BLE_INF("totem_ble bg_evict addr=%s idx=%d disc_reason=0x%02x thrash_win=%u", addr, idx,
@@ -313,14 +368,6 @@ static void bond_heal_note_auth_ok(void) {
 static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
     int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
     int active = zmk_ble_active_profile_index();
-    if (!err && totem_usb_owns_hid()) {
-        struct bt_conn_info info;
-        if (bt_conn_get_info(conn, &info) == 0 && info.role == BT_CONN_ROLE_PERIPHERAL) {
-            TOTEM_BLE_INF("totem_ble usb_quiet reject host idx=%d", idx);
-            (void)bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-            return;
-        }
-    }
     if (err) {
         char addr[BT_ADDR_LE_STR_LEN];
         bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
@@ -331,6 +378,9 @@ static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
     log_host_conn_event("connected", conn, 0);
     totem_host_event_log_record(TOTEM_HEVT_CONN, (int8_t)idx, (int8_t)active, 0,
                                 (uint8_t)thrash_win_count(), 0);
+    if (idx == active) {
+        bg_clear_ignores();
+    }
     /* Immediate try: known background hosts drop without waiting for L2. */
     k_work_submit(&exclusive_host_evict_work);
     exclusive_host_schedule_retry();
@@ -421,6 +471,7 @@ static int exclusive_host_profile_changed(const zmk_event_t *eh) {
     active_auth_fail_streak = 0;
 #endif
     thrash_clear();
+    bg_clear_ignores();
     class_a_note_auth_event(false);
     int active = zmk_ble_active_profile_index();
     TOTEM_BLE_INF("totem_ble profile_changed active=%d connected=%d open=%d", active,
@@ -429,7 +480,7 @@ static int exclusive_host_profile_changed(const zmk_event_t *eh) {
                                 zmk_ble_active_profile_is_connected() ? 1 : 0, 0,
                                 zmk_ble_active_profile_is_open() ? 1 : 0);
     totem_host_event_log_persist();
-    exclusive_host_evict_all(false);
+    exclusive_host_evict_all(true);
     exclusive_host_schedule_retry();
     return ZMK_EV_EVENT_BUBBLE;
 }
