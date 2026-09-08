@@ -5,6 +5,7 @@ if(CONFIG_TOTEM_EXCLUSIVE_HOST OR CONFIG_TOTEM_LAZY_INACTIVE_HOST OR CONFIG_TOTE
    OR CONFIG_TOTEM_BOOT_PROFILE_DUMP OR CONFIG_TOTEM_FAULT_CAPTURE
    OR CONFIG_TOTEM_ENDPOINT_LOG
    OR CONFIG_TOTEM_BATTERY_LOG
+   OR CONFIG_TOTEM_USB_QUIET_HOST
    OR CONFIG_ZMK_STUDIO)
   zephyr_library()
   zephyr_library_include_directories(${APPLICATION_SOURCE_DIR}/include)
@@ -50,6 +51,10 @@ endif()
 
 if(CONFIG_ZMK_STUDIO)
   zephyr_library_sources(src/totem_studio_usb.c)
+endif()
+
+if(CONFIG_TOTEM_USB_QUIET_HOST)
+  zephyr_library_sources(src/usb_host_quiet.c)
 endif()
 
 # Note: TOTEM_ADV_* / DIR_THEN_OPEN / FAL / reselect live in patches/zmk-ble.patch.

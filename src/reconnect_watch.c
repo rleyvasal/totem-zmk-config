@@ -26,6 +26,7 @@
 
 #include <totem_reconnect_watch.h>
 #include <totem_host_event_log.h>
+#include <totem_usb_quiet.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 
@@ -134,6 +135,11 @@ static void reconnect_watch_reset(void) {
 static void reconnect_watch_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
+    if (totem_usb_owns_hid() || zmk_ble_totem_ads_suppressed()) {
+        reconnect_watch_reset();
+        return;
+    }
+
     if (zmk_ble_active_profile_is_open()) {
         LOG_DBG("totem_ble watch stop: open (pairing)");
         reconnect_watch_reset();
@@ -217,6 +223,10 @@ static void reconnect_watch_work_handler(struct k_work *work) {
 
 /* BT_SEL / profile_changed: recovery ladder (step1 = densify only, no reselect). */
 static void reconnect_watch_arm_full(void) {
+    if (totem_usb_owns_hid() || zmk_ble_totem_ads_suppressed()) {
+        reconnect_watch_reset();
+        return;
+    }
     if (zmk_ble_active_profile_is_open() || zmk_ble_active_profile_is_connected()) {
         reconnect_watch_reset();
         return;
@@ -316,6 +326,10 @@ static void reconnect_watch_disconnected(struct bt_conn *conn, uint8_t reason) {
     int active = zmk_ble_active_profile_index();
 
     TOTEM_BLE_INF("totem_ble watch disc idx=%d active=%d disc_reason=0x%02x", idx, active, reason);
+
+    if (totem_usb_owns_hid()) {
+        return;
+    }
 
     /* Peer-mapped only: never arm on background thrash or unresolved RPA. */
     if (idx < 0 || idx != active) {

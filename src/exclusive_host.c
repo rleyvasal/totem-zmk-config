@@ -37,6 +37,7 @@
 #include <zmk/events/ble_active_profile_changed.h>
 
 #include <totem_host_event_log.h>
+#include <totem_usb_quiet.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 
@@ -187,6 +188,11 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     if (info.role != BT_CONN_ROLE_PERIPHERAL) {
         return;
     }
+    if (totem_usb_owns_hid()) {
+        /* USB HID is active; usb_host_quiet.c drops host links. Do not start
+         * an exclusive-host evict loop on the cable. */
+        return;
+    }
 
     int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
     int active = zmk_ble_active_profile_index();
@@ -307,6 +313,14 @@ static void bond_heal_note_auth_ok(void) {
 static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
     int idx = zmk_ble_profile_index(bt_conn_get_dst(conn));
     int active = zmk_ble_active_profile_index();
+    if (!err && totem_usb_owns_hid()) {
+        struct bt_conn_info info;
+        if (bt_conn_get_info(conn, &info) == 0 && info.role == BT_CONN_ROLE_PERIPHERAL) {
+            TOTEM_BLE_INF("totem_ble usb_quiet reject host idx=%d", idx);
+            (void)bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+            return;
+        }
+    }
     if (err) {
         char addr[BT_ADDR_LE_STR_LEN];
         bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));

@@ -5,6 +5,9 @@
  * whenever the cable is up so RPC listens without turning Bluetooth off.
  *
  * Unplugging USB lets ZMK fall back to BLE as usual.
+ *
+ * Host BLE itself is quieted separately by CONFIG_TOTEM_USB_QUIET_HOST so
+ * advertising/eviction does not starve USB HID. The split link stays up.
  */
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
