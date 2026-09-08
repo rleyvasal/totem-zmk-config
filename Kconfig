@@ -169,6 +169,19 @@ config TOTEM_USB_CONSOLE
 	  Trade-off: adds a CDC ACM interface to the USB descriptor (the keyboard shows
 	  up as a composite device) and costs a little RAM. Set n if USB HID misbehaves.
 
+config TOTEM_STUDIO_CONSOLE
+	bool "Printk on the existing Studio board CDC (no extra USB interface)"
+	depends on ZMK_STUDIO
+	select CONSOLE
+	select UART_CONSOLE
+	select USB_UART_CONSOLE
+	default n
+	help
+	  Point printk at the XIAO board CDC the Studio snippet already enumerates
+	  (the silent-looking usbmodem101 / "ZMK Console" port). Does not add a
+	  third CDC and leaves CONFIG_LOG off, so it is safe next to Studio RPC.
+	  Exclusive-host and reconnect-watch also printk totem_ble lines here.
+
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
 	depends on ZMK_BLE
