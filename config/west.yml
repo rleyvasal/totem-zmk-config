@@ -10,10 +10,10 @@ manifest:
     - name: zmk
       remote: fork
       repo-path: zmk-next
-      # Runtime Config plus the validated Totem BLE reconnect patch. Keep this
-      # exact revision pinned so production and Studio test artifacts use the
-      # same protocol and persistence implementation.
-      revision: bdcf24d0d65a9f21b14a1da63cae1a260913ab43
+      # zmk-next-logs-batt: USB HID must not fall back to BLE, last-cell battery,
+      # framed Studio log TX. Must match this config branch or the left image
+      # fails to link (zmk_battery_last_cell_soc, zmk_rpc_tx_raw_payload, …).
+      revision: fd192e037dcb718191b5edc96d49ef5be4a06b93
       import: app/west.yml
   self:
     path: config
