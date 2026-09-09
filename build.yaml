@@ -1,8 +1,8 @@
 include:
   # Production left = Studio-enabled. Official "just set CONFIG_ZMK_STUDIO=y"
-  # is not enough on this board: the XIAO board CDC (printk) plus the RPC uart
-  # enumerate two Totem Home serial ports, and Studio UART RX only starts
-  # when HID is on USB. snippet + cmake-args match the working probe image.
+  # is not enough on this board: the snippet attaches RPC to the XIAO board CDC
+  # (one Totem serial port; printk is framed on the same stream). Studio UART
+  # RX only starts when HID is on USB.
   - board: xiao_ble//zmk
     shield: totem_left
     snippet: totem-studio-rpc
@@ -22,8 +22,8 @@ include:
   # Alternate explicitly named Studio artifact. It uses the same Studio and
   # Runtime Config feature set as production totem_left.
   #
-  # Local snippet totem-studio-rpc (not upstream studio-rpc-usb-uart). The XIAO
-  # board CDC is the printk console (TOTEM_STUDIO_CONSOLE); RPC is the other.
+  # Local snippet totem-studio-rpc (not upstream studio-rpc-usb-uart). One CDC:
+  # Studio RPC plus framed printk (TOTEM_STUDIO_CONSOLE).
   - board: xiao_ble//zmk
     shield: totem_left
     snippet: totem-studio-rpc

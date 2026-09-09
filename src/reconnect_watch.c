@@ -135,7 +135,7 @@ static void reconnect_watch_reset(void) {
 static void reconnect_watch_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
-    if (totem_hid_is_usb() || zmk_ble_totem_ads_suppressed()) {
+    if (totem_hid_is_usb() || totem_usb_cable_up() || zmk_ble_totem_ads_suppressed()) {
         reconnect_watch_reset();
         return;
     }
@@ -223,7 +223,7 @@ static void reconnect_watch_work_handler(struct k_work *work) {
 
 /* BT_SEL / profile_changed: recovery ladder (step1 = densify only, no reselect). */
 static void reconnect_watch_arm_full(void) {
-    if (totem_hid_is_usb() || zmk_ble_totem_ads_suppressed()) {
+    if (totem_hid_is_usb() || totem_usb_cable_up() || zmk_ble_totem_ads_suppressed()) {
         reconnect_watch_reset();
         return;
     }
@@ -244,7 +244,7 @@ static void reconnect_watch_arm_full(void) {
 
 /* Active-down / optional storm: light ladder — never prof_select in step 1. */
 static void reconnect_watch_arm_light(void) {
-    if (totem_hid_is_usb()) {
+    if (totem_hid_is_usb() || totem_usb_cable_up()) {
         return;
     }
     if (zmk_ble_active_profile_is_open() || zmk_ble_active_profile_is_connected()) {
@@ -330,7 +330,7 @@ static void reconnect_watch_disconnected(struct bt_conn *conn, uint8_t reason) {
 
     TOTEM_BLE_INF("totem_ble watch disc idx=%d active=%d disc_reason=0x%02x", idx, active, reason);
 
-    if (totem_hid_is_usb()) {
+    if (totem_hid_is_usb() || totem_usb_cable_up()) {
         return;
     }
 

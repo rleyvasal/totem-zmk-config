@@ -170,17 +170,14 @@ config TOTEM_USB_CONSOLE
 	  up as a composite device) and costs a little RAM. Set n if USB HID misbehaves.
 
 config TOTEM_STUDIO_CONSOLE
-	bool "Printk on the existing Studio board CDC (no extra USB interface)"
+	bool "Mux printk onto the Studio RPC CDC as framed log lines"
 	depends on ZMK_STUDIO
-	select CONSOLE
-	select UART_CONSOLE
-	select USB_UART_CONSOLE
 	default n
 	help
-	  Point printk at the XIAO board CDC the Studio snippet already enumerates
-	  (the silent-looking usbmodem101 / "ZMK Console" port). Does not add a
-	  third CDC and leaves CONFIG_LOG off, so it is safe next to Studio RPC.
-	  Exclusive-host and reconnect-watch also printk totem_ble lines here.
+	  One USB serial port. Studio RPC owns the CDC; printk lines are sent as
+	  SOF-framed payloads that start with 'L' so the configurator can split
+	  remap traffic from the BLE/host log. Does not enable UART_CONSOLE (that
+	  would interleave with RPC). Module src/totem_studio_log.c.
 
 config TOTEM_USB_QUIET_HOST
 	bool "Drop host BLE while USB is providing HID (keep the split link)"
