@@ -1,0 +1,16 @@
+/*
+ * Attach Studio RPC to a CDC ACM UART on the USB device controller.
+ * Printk is muxed onto the same UART as framed 'L' / 'B' payloads
+ * (CONFIG_ZMK_STUDIO_CONSOLE / CONFIG_TOTEM_STUDIO_CONSOLE).
+ */
+/ {
+    chosen {
+        zmk,studio-rpc-uart = &zmk_studio_one_cdc;
+    };
+};
+
+&zephyr_udc0 {
+    zmk_studio_one_cdc: zmk_studio_one_cdc {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};

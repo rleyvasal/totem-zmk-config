@@ -1,0 +1,8 @@
+# One USB CDC for ZMK Studio RPC plus framed printk.
+# Use on any board that has (or can add) a CDC ACM UART on zephyr_udc0.
+# Totem/XIAO still uses totem-studio-rpc so the extra board console CDC stays off.
+name: zmk-studio-one-cdc
+append:
+  DTS_EXTRA_CPPFLAGS: -DZMK_BEHAVIORS_KEEP_ALL
+  EXTRA_DTC_OVERLAY_FILE: zmk-studio-one-cdc.overlay
+  EXTRA_CONF_FILE: zmk-studio-one-cdc.conf

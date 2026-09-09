@@ -1,19 +1,20 @@
 # Standalone modules (multi-host BLE helpers). ZMK public headers are PRIVATE
 # on the ZMK target, so external modules must add app/include explicitly.
-if(CONFIG_TOTEM_EXCLUSIVE_HOST OR CONFIG_TOTEM_LAZY_INACTIVE_HOST OR CONFIG_TOTEM_RECONNECT_WATCH
+if(CONFIG_TOTEM_EXCLUSIVE_HOST OR CONFIG_ZMK_EXCLUSIVE_HOST
+   OR CONFIG_TOTEM_LAZY_INACTIVE_HOST OR CONFIG_TOTEM_RECONNECT_WATCH OR CONFIG_ZMK_RECONNECT_WATCH
    OR CONFIG_TOTEM_HOST_EVENT_LOG OR CONFIG_TOTEM_WATCHDOG OR CONFIG_TOTEM_RESET_REASON_CAPTURE
    OR CONFIG_TOTEM_BOOT_PROFILE_DUMP OR CONFIG_TOTEM_FAULT_CAPTURE
    OR CONFIG_TOTEM_ENDPOINT_LOG
-   OR CONFIG_TOTEM_BATTERY_LOG
+   OR CONFIG_TOTEM_BATTERY_LOG OR CONFIG_ZMK_BATTERY_LOG
    OR CONFIG_TOTEM_USB_QUIET_HOST
-   OR CONFIG_TOTEM_STUDIO_CONSOLE
+   OR CONFIG_TOTEM_STUDIO_CONSOLE OR CONFIG_ZMK_STUDIO_CONSOLE
    OR CONFIG_ZMK_STUDIO)
   zephyr_library()
   zephyr_library_include_directories(${APPLICATION_SOURCE_DIR}/include)
   zephyr_library_include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 endif()
 
-if(CONFIG_TOTEM_EXCLUSIVE_HOST)
+if(CONFIG_TOTEM_EXCLUSIVE_HOST OR CONFIG_ZMK_EXCLUSIVE_HOST)
   zephyr_library_sources(src/exclusive_host.c)
 endif()
 
@@ -21,7 +22,7 @@ if(CONFIG_TOTEM_LAZY_INACTIVE_HOST)
   zephyr_library_sources(src/lazy_inactive_host.c)
 endif()
 
-if(CONFIG_TOTEM_RECONNECT_WATCH)
+if(CONFIG_TOTEM_RECONNECT_WATCH OR CONFIG_ZMK_RECONNECT_WATCH)
   zephyr_library_sources(src/reconnect_watch.c)
 endif()
 
@@ -42,7 +43,7 @@ if(CONFIG_TOTEM_FAULT_CAPTURE OR CONFIG_TOTEM_WATCHDOG OR CONFIG_TOTEM_RESET_REA
   zephyr_library_sources(src/totem_fault.c)
 endif()
 
-if(CONFIG_TOTEM_BATTERY_LOG)
+if(CONFIG_TOTEM_BATTERY_LOG OR CONFIG_ZMK_BATTERY_LOG)
   zephyr_library_sources(src/totem_battery_log.c)
 endif()
 
@@ -54,7 +55,7 @@ if(CONFIG_ZMK_STUDIO)
   zephyr_library_sources(src/totem_studio_usb.c)
 endif()
 
-if(CONFIG_TOTEM_STUDIO_CONSOLE)
+if(CONFIG_TOTEM_STUDIO_CONSOLE OR CONFIG_ZMK_STUDIO_CONSOLE)
   zephyr_library_sources(src/totem_studio_log.c)
 endif()
 

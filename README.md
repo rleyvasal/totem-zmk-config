@@ -2,6 +2,8 @@
 
 Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/totem) split keyboard, tuned for **two computers (macOS + Windows)**, **battery life**, and a Colemak-DH daily-driver layout.
 
+**Other keyboards (Corne, …):** this repo is also the host-policy Zephyr module (exclusive-host, Studio log mux). Pin `zmk-next` + this repo in your own `west.yml` — see **[STACK.md](STACK.md)**. You do not need the Totem shield or keymap.
+
 ## Features
 
 - **Dual host Bluetooth** — exclusive-host keeps only the selected profile connected, preventing inactive-host wake and dual-link drain

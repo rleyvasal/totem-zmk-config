@@ -39,7 +39,7 @@ int zmk_rpc_tx_raw_payload(const uint8_t *payload, size_t len);
 void zmk_studio_uart_rearm(void);
 bool zmk_studio_uart_host_open(void);
 
-#if IS_ENABLED(CONFIG_TOTEM_STUDIO_CONSOLE)
+#if IS_ENABLED(CONFIG_TOTEM_STUDIO_CONSOLE) || IS_ENABLED(CONFIG_ZMK_STUDIO_CONSOLE)
 
 #define LINE_MAX 120
 #define RING_LEN 32

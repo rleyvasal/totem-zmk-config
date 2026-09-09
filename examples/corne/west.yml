@@ -1,0 +1,21 @@
+# Example: Corne (or any split) on the ZMK Next host-policy stack.
+# Copy into your keyboard config repo as config/west.yml (adjust self.path).
+manifest:
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+    - name: rleyvasal
+      url-base: https://github.com/rleyvasal
+  projects:
+    - name: zmk
+      remote: rleyvasal
+      repo-path: zmk-next
+      revision: zmk-next-logs-batt
+      import: app/west.yml
+    - name: zmk-next-host
+      remote: rleyvasal
+      repo-path: totem-zmk-config
+      revision: zmk-next-logs-batt
+      path: modules/zmk-next-host
+  self:
+    path: config

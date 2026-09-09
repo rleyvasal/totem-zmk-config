@@ -1,3 +1,36 @@
+# Public names for any ZMK keyboard. TOTEM_* remain valid (Totem.conf uses them).
+# Setting ZMK_* =y turns on the matching TOTEM_* so existing CMake/depends keep working.
+
+config ZMK_EXCLUSIVE_HOST
+	bool "Exclusive host: only the selected BLE profile stays connected"
+	depends on ZMK_BLE
+	default n
+	help
+	  Same feature as TOTEM_EXCLUSIVE_HOST. Use this name on Corne and other
+	  boards; Totem may keep assigning TOTEM_EXCLUSIVE_HOST.
+
+config ZMK_RECONNECT_WATCH
+	bool "Reconnect watch after BT_SEL if the selected host stays down"
+	depends on ZMK_BLE
+	default n
+	help
+	  Same feature as TOTEM_RECONNECT_WATCH.
+
+config ZMK_STUDIO_CONSOLE
+	bool "Mux printk onto the Studio RPC CDC as framed log lines"
+	depends on ZMK_STUDIO
+	default n
+	help
+	  Same feature as TOTEM_STUDIO_CONSOLE. One USB serial port: Studio RPC
+	  plus SOF-framed 'L'/'B' payloads for the configurator log panel.
+
+config ZMK_BATTERY_LOG
+	bool "printk both halves' battery (central split only)"
+	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default n
+	help
+	  Same feature as TOTEM_BATTERY_LOG.
+
 config TOTEM_FAULT_CAPTURE
 	bool "Record crashes (reason + faulting PC) across a reset"
 	select THREAD_NAME
@@ -60,7 +93,7 @@ config TOTEM_WATCHDOG_TIMEOUT_MS
 config TOTEM_RESET_REASON_CAPTURE
 	bool "Record why the SoC last reset (power-on, watchdog, brownout, ...)"
 	select HWINFO
-	default y
+	default n
 	help
 	  Read hwinfo_get_reset_cause() once at boot, print it via printk, and store a
 	  TOTEM_HEVT_BOOT record in the host event ring. Without this a watchdog reset
@@ -73,7 +106,7 @@ config TOTEM_RESET_REASON_CAPTURE
 config TOTEM_BOOT_PROFILE_DUMP
 	bool "printk each profile's stored host address at boot"
 	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
-	default y
+	default n
 	help
 	  Print `totem_prof <n> <addr>` for every profile at boot, marking the active one
 	  with * and empty slots with EMPTY. This is the single most useful diagnostic we
@@ -102,7 +135,7 @@ config TOTEM_BOOT_PROFILE_DUMP_DELAY_MS
 config TOTEM_ENDPOINT_LOG
 	bool "printk the HID endpoint whenever it changes"
 	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
-	default y
+	default n
 	help
 	  Print `totem_ep changed selected=... preferred=...` on every endpoint change,
 	  plus once at boot. Which transport is carrying keystrokes is otherwise invisible
@@ -121,7 +154,7 @@ config TOTEM_ENDPOINT_LOG
 config TOTEM_BATTERY_LOG
 	bool "printk both halves' battery level with timestamps"
 	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
-	default y
+	default y if ZMK_BATTERY_LOG
 	help
 	  Print `totem_batt t=<uptime> left=NN%% right=NN%%` on every battery event and on
 	  a periodic tick. Host-side battery UIs cannot be trusted for measurement:
@@ -172,7 +205,7 @@ config TOTEM_USB_CONSOLE
 config TOTEM_STUDIO_CONSOLE
 	bool "Mux printk onto the Studio RPC CDC as framed log lines"
 	depends on ZMK_STUDIO
-	default n
+	default y if ZMK_STUDIO_CONSOLE
 	help
 	  One USB serial port. Studio RPC owns the CDC; printk lines are sent as
 	  SOF-framed payloads that start with 'L' so the configurator can split
@@ -192,7 +225,7 @@ config TOTEM_USB_QUIET_HOST
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
 	depends on ZMK_BLE
-	default n
+	default y if ZMK_EXCLUSIVE_HOST
 	help
 	  Disconnect any non-active host so only the selected computer stays linked.
 	  Prevents wake/cross-talk and dual-link battery cost, but every BT_SEL pays
@@ -331,7 +364,7 @@ config TOTEM_ACTIVE_ADV_FILTER
 config TOTEM_RECONNECT_WATCH
 	bool "Watchdog for stuck profile-switch reconnects"
 	depends on ZMK_BLE
-	default y
+	default y if ZMK_RECONNECT_WATCH
 	help
 	  After BT_SEL, if the active bonded host does not come up, run a recovery
 	  ladder: kick advertising, force-evict background hosts, then verify the
