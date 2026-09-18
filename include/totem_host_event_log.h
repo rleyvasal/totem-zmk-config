@@ -37,6 +37,18 @@ enum totem_host_evt {
     /* Post-mortem from the previous boot (see totem_fault.h). `idx` is the task
      * watchdog channel or -1, `reason` the K_ERR_* code, `extra` the fault kind. */
     TOTEM_HEVT_FAULT = 15,
+    /* USB/HID state transition. reason is the USB event state; extra is the
+     * selected transport (or a compact endpoint state). */
+    TOTEM_HEVT_USB = 16,
+    /* Host advertising intent/result. reason is the requested advertising
+     * state; extra is a compact reason or error code. */
+    TOTEM_HEVT_ADV = 17,
+    /* Split central-to-peripheral link transition. reason is the HCI reason
+     * or security error; extra carries role/security state. */
+    TOTEM_HEVT_SPLIT = 18,
+    /* A coalesced repeat count; reason identifies the underlying event and
+     * extra is the number of suppressed repeats. */
+    TOTEM_HEVT_REPEAT = 19,
 };
 
 /**
@@ -57,6 +69,12 @@ void totem_host_event_log_dump(void);
 
 /** Force-save ring to settings now (also done periodically). */
 void totem_host_event_log_persist(void);
+
+/** Record a non-host diagnostic transition using the shared compact schema. */
+static inline void totem_diag_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
+                                         uint8_t extra) {
+    totem_host_event_log_record(type, idx, active, reason, 0, extra);
+}
 #else
 static inline void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active,
                                                uint8_t reason, uint8_t thrash_win, uint8_t extra) {
@@ -69,6 +87,14 @@ static inline void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t 
 }
 static inline void totem_host_event_log_dump(void) {}
 static inline void totem_host_event_log_persist(void) {}
+static inline void totem_diag_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
+                                         uint8_t extra) {
+    (void)type;
+    (void)idx;
+    (void)active;
+    (void)reason;
+    (void)extra;
+}
 #endif
 
 #ifdef __cplusplus

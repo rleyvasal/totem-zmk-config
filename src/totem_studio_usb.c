@@ -19,6 +19,8 @@
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/usb.h>
 
+#include <totem_host_event_log.h>
+
 void zmk_studio_uart_rearm(void);
 
 #if IS_ENABLED(CONFIG_ZMK_STUDIO) && IS_ENABLED(CONFIG_ZMK_USB)
@@ -60,7 +62,15 @@ static void totem_studio_usb_kick(void) {
 }
 
 static int totem_studio_usb_listener(const zmk_event_t *eh) {
-    ARG_UNUSED(eh);
+    const struct zmk_usb_conn_state_changed *usb = as_zmk_usb_conn_state_changed(eh);
+    const struct zmk_endpoint_changed *endpoint = as_zmk_endpoint_changed(eh);
+    if (usb != NULL) {
+        totem_diag_log_record(TOTEM_HEVT_USB, -1, -1, (uint8_t)usb->conn_state,
+                              (uint8_t)zmk_endpoint_get_selected().transport);
+    } else if (endpoint != NULL) {
+        totem_diag_log_record(TOTEM_HEVT_USB, -1, -1, 0xFF,
+                              (uint8_t)endpoint->endpoint.transport);
+    }
     totem_studio_usb_kick();
     return ZMK_EV_EVENT_BUBBLE;
 }

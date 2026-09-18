@@ -429,13 +429,13 @@ config TOTEM_BG_EVICT_CAP
 	  a connect/evict storm that stalls USB HID.
 
 config TOTEM_HOST_EVENT_LOG
-	bool "Multi-profile host event ring (RAM + settings) with USB dump"
+	bool "Persistent diagnostic black box (RAM ring + rotating journal)"
 	depends on ZMK_BLE
 	default y
 	help
-	  Record connect/disconnect/security/thrash/watch events for any BLE
-	  profile index into a circular ring. Persist snapshots to settings so
-	  history survives reboot and firmware flash (without settings-reset).
+	  Record USB, advertising, BLE host, split, recovery and fault transitions
+	  into a RAM ring. Periodically persist compact batches into a rotating,
+	  CRC-checked settings journal so the most recent records survive a reset.
 	  Dump with &host_log_dump (combo) via printk over USB CDC when console
 	  logging is enabled (zmk-usb-logging snippet or CONFIG_ZMK_USB_LOGGING).
 	  Capture works on the normal production image without USB attached.
@@ -448,12 +448,12 @@ config TOTEM_HOST_EVENT_LOG_SIZE
 	range 32 256
 
 config TOTEM_HOST_EVENT_LOG_PERSIST_EVERY
-	int "Persist ring to settings after this many new events"
+	int "Persist a journal block after this many new events"
 	depends on TOTEM_HOST_EVENT_LOG
 	default 32
 	range 1 128
 	help
-	  Count threshold before a flash snapshot is *requested*. Actual writes
+	  Count threshold before a journal write is *requested*. Actual writes
 	  are also rate-limited by TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS so thrash
 	  storms cannot spam NVS (which can hang the central / kill USB+BLE).
 
@@ -463,9 +463,25 @@ config TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS
 	default 60000
 	range 5000 600000
 	help
-	  Coalesce settings writes during dual-host thrash. RAM ring still
-	  records every event; only NVS is throttled. Dump still requests a
-	  persist (subject to this interval).
+	  Coalesce journal writes during dual-host thrash. RAM ring still records
+	  every event; only NVS is throttled. Dump still requests a persist
+	  (subject to this interval).
+
+config TOTEM_HOST_EVENT_LOG_BLOCK_SIZE
+	int "Events per persistent journal block"
+	depends on TOTEM_HOST_EVENT_LOG
+	default 16
+	range 8 32
+
+config TOTEM_HOST_EVENT_LOG_SLOTS
+	int "Persistent journal block count"
+	depends on TOTEM_HOST_EVENT_LOG
+	default 8
+	range 4 8
+	help
+	  Journal blocks rotate rather than overwriting a single settings key.
+	  With the defaults, the persistent black box retains up to 128 compact
+	  events across the most recent valid blocks.
 
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"

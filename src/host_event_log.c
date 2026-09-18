@@ -1,10 +1,9 @@
 /*
- * Multi-profile host event ring + USB-serial dump behavior.
+ * Persistent diagnostic black box + USB-serial dump behavior.
  *
- * Captures host BLE events for any profile (idx/active are free integers).
- * RAM ring is primary; optional settings snapshot survives reboot / UF2 flash
- * without settings-reset so you can capture on production then dump on a
- * logging build (or production with ZMK_USB_LOGGING).
+ * Captures USB, advertising, BLE host/split, recovery and fault events. RAM
+ * is primary; compact CRC-checked settings blocks rotate so recent history
+ * survives reboot / UF2 flash without settings-reset.
  *
  * SAFETY (boot brick fix):
  * - Mutex/work items are statically initialized (settings load can run before
@@ -19,6 +18,7 @@
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/sys/crc.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/util.h>
 
@@ -32,8 +32,10 @@ LOG_MODULE_REGISTER(host_event_log, CONFIG_ZMK_LOG_LEVEL);
 #if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
 
 #define RING_CAP CONFIG_TOTEM_HOST_EVENT_LOG_SIZE
-#define SETTINGS_KEY "th/hevt"
+#define SETTINGS_KEY_PREFIX "th/dlog"
 #define PERSIST_EVERY CONFIG_TOTEM_HOST_EVENT_LOG_PERSIST_EVERY
+#define BLOCK_EVENTS CONFIG_TOTEM_HOST_EVENT_LOG_BLOCK_SIZE
+#define JOURNAL_SLOTS CONFIG_TOTEM_HOST_EVENT_LOG_SLOTS
 /* Flash NVS under dual-host thrash can stall the central for long enough that
  * BLE + USB HID look dead until power-cycle. Never persist more often than this. */
 #define PERSIST_MIN_INTERVAL_MS CONFIG_TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS
@@ -48,20 +50,30 @@ struct totem_host_event {
     uint8_t extra;
 } __packed;
 
-/* On-disk blob: small header + packed events (oldest→newest order at save). */
-struct totem_host_event_blob {
-    uint16_t magic;
-    uint16_t count;
-    uint32_t seq;
-    struct totem_host_event ev[RING_CAP];
+/* One settings value per slot. A write is valid only when its CRC covers the
+ * complete header and event payload; an interrupted flash write is ignored on
+ * the next boot and the previous slot remains available. */
+struct totem_diag_block {
+    uint32_t magic;
+    uint16_t version;
+    uint8_t slot;
+    uint8_t count;
+    uint32_t journal_seq;
+    uint32_t first_event_seq;
+    struct totem_host_event ev[BLOCK_EVENTS];
+    uint32_t crc;
 } __packed;
 
-#define BLOB_MAGIC 0x4845 /* 'H''E' */
+#define BLOCK_MAGIC 0x54444C47u /* 'TDLG' */
+#define BLOCK_VERSION 1
 
 static struct totem_host_event ring[RING_CAP];
 static uint16_t ring_head;  /* next write */
 static uint16_t ring_count; /* 0..RING_CAP */
 static uint32_t ring_seq;
+static uint32_t persisted_event_seq;
+static uint32_t journal_seq;
+static uint8_t next_slot;
 static uint16_t events_since_persist;
 static int64_t last_persist_uptime_ms;
 static bool persist_requested;
@@ -70,7 +82,9 @@ static bool persist_requested;
 static K_MUTEX_DEFINE(ring_mu);
 
 /* Static buffers — never put the full blob on a call stack. */
-static struct totem_host_event_blob persist_blob;
+static struct totem_diag_block persist_block;
+static struct totem_diag_block restored_blocks[JOURNAL_SLOTS];
+static bool restored_valid[JOURNAL_SLOTS];
 static struct totem_host_event dump_tmp[RING_CAP];
 
 static void dump_work_handler(struct k_work *work);
@@ -111,6 +125,14 @@ static const char *evt_name(uint8_t type) {
         return "boot";
     case TOTEM_HEVT_FAULT:
         return "fault";
+    case TOTEM_HEVT_USB:
+        return "usb";
+    case TOTEM_HEVT_ADV:
+        return "adv";
+    case TOTEM_HEVT_SPLIT:
+        return "split";
+    case TOTEM_HEVT_REPEAT:
+        return "repeat";
     default:
         return "unknown";
     }
@@ -155,6 +177,11 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
     };
 
     k_mutex_lock(&ring_mu, K_FOREVER);
+    /* Continue event ordering across boots after settings restored the latest
+     * persisted sequence. */
+    if (ring_seq < persisted_event_seq) {
+        ring_seq = persisted_event_seq;
+    }
     ring[ring_head] = e;
     ring_head = (uint16_t)((ring_head + 1) % RING_CAP);
     if (ring_count < RING_CAP) {
@@ -168,9 +195,10 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
     }
     k_mutex_unlock(&ring_mu);
 
-    if (need_persist) {
-        schedule_persist_coalesced();
-    }
+    /* A quiet failure may produce only one record, so also schedule a bounded
+     * time-based flush. The work item coalesces storms into one write. */
+    ARG_UNUSED(need_persist);
+    schedule_persist_coalesced();
 }
 
 static void persist_work_handler(struct k_work *work) {
@@ -191,24 +219,57 @@ void totem_host_event_log_persist(void) {
     }
 
     k_mutex_lock(&ring_mu, K_FOREVER);
-    memset(&persist_blob, 0, sizeof(persist_blob));
-    persist_blob.magic = BLOB_MAGIC;
-    ring_get_ordered(persist_blob.ev, &persist_blob.count);
-    persist_blob.seq = ring_seq;
-    uint16_t count = persist_blob.count;
-    uint32_t seq = persist_blob.seq;
-    size_t len = offsetof(struct totem_host_event_blob, ev) +
-                 (size_t)count * sizeof(struct totem_host_event);
+    uint32_t first_available = ring_count ? ring_seq - ring_count + 1 : ring_seq + 1;
+    uint32_t first_new = persisted_event_seq + 1;
+    if (first_new < first_available) {
+        first_new = first_available;
+    }
+    if (first_new > ring_seq) {
+        persist_requested = false;
+        k_mutex_unlock(&ring_mu);
+        return;
+    }
+    uint32_t pending = ring_seq - first_new + 1;
+    uint16_t count = (uint16_t)MIN(pending, (uint32_t)BLOCK_EVENTS);
+    /* Preserve the newest records if a long storm exceeded one block. */
+    first_new = ring_seq - count + 1;
+    uint16_t start = (uint16_t)((ring_head + RING_CAP - ring_count) % RING_CAP);
+
+    memset(&persist_block, 0, sizeof(persist_block));
+    persist_block.magic = BLOCK_MAGIC;
+    persist_block.version = BLOCK_VERSION;
+    persist_block.slot = next_slot;
+    persist_block.count = (uint8_t)count;
+    persist_block.journal_seq = ++journal_seq;
+    persist_block.first_event_seq = first_new;
+    for (uint16_t i = 0; i < count; i++) {
+        uint32_t event_seq = first_new + i;
+        uint16_t offset = (uint16_t)(event_seq - first_available);
+        persist_block.ev[i] = ring[(start + offset) % RING_CAP];
+    }
+    persist_block.crc = crc32_ieee((const uint8_t *)&persist_block,
+                                   offsetof(struct totem_diag_block, crc));
+    uint8_t slot = next_slot;
+    char key[20];
+    snprintk(key, sizeof(key), SETTINGS_KEY_PREFIX "/%u", slot);
+    size_t len = offsetof(struct totem_diag_block, ev) +
+                 (size_t)count * sizeof(struct totem_host_event) + sizeof(persist_block.crc);
     persist_requested = false;
     /* Copy under lock; write after unlock so BLE callbacks are not blocked on flash. */
     k_mutex_unlock(&ring_mu);
 
-    int err = settings_save_one(SETTINGS_KEY, &persist_blob, len);
+    int err = settings_save_one(key, &persist_block, len);
     last_persist_uptime_ms = k_uptime_get();
     if (err) {
-        LOG_WRN("totem_ble hevt persist failed err=%d count=%u", err, count);
+        LOG_WRN("totem_diag persist failed err=%d count=%u", err, count);
     } else {
-        LOG_DBG("totem_ble hevt persisted count=%u seq=%u", count, seq);
+        k_mutex_lock(&ring_mu, K_FOREVER);
+        persisted_event_seq = ring_seq;
+        restored_blocks[slot] = persist_block;
+        restored_valid[slot] = true;
+        next_slot = (uint8_t)((slot + 1) % JOURNAL_SLOTS);
+        k_mutex_unlock(&ring_mu);
+        LOG_DBG("totem_diag persisted slot=%u count=%u seq=%u", slot, count, journal_seq);
     }
 #else
     LOG_WRN("totem_ble hevt persist skipped (SETTINGS off)");
@@ -223,6 +284,24 @@ static void dump_one(const struct totem_host_event *e, uint16_t i) {
            e->thrash_win, e->extra);
 }
 
+static void dump_persistent(void) {
+    printk("===== totem_diag persistent journal begin slots=%u =====\n", JOURNAL_SLOTS);
+    /* next_slot is the oldest candidate after a complete rotation. */
+    for (uint8_t off = 0; off < JOURNAL_SLOTS; off++) {
+        uint8_t slot = (uint8_t)((next_slot + off) % JOURNAL_SLOTS);
+        if (!restored_valid[slot]) {
+            continue;
+        }
+        const struct totem_diag_block *block = &restored_blocks[slot];
+        printk("totem_diag block slot=%u seq=%u first=%u count=%u\n", slot, block->journal_seq,
+               block->first_event_seq, block->count);
+        for (uint8_t i = 0; i < block->count; i++) {
+            dump_one(&block->ev[i], i);
+        }
+    }
+    printk("===== totem_diag persistent journal end =====\n");
+}
+
 void totem_host_event_log_dump(void) {
     uint16_t n = 0;
     uint32_t seq;
@@ -232,12 +311,13 @@ void totem_host_event_log_dump(void) {
     seq = ring_seq;
     k_mutex_unlock(&ring_mu);
 
-    printk("\n===== totem_ble HOST_EVENT_LOG dump begin count=%u seq=%u cap=%u =====\n", n, seq,
+    dump_persistent();
+    printk("\n===== totem_diag RAM ring begin count=%u seq=%u cap=%u =====\n", n, seq,
            RING_CAP);
     for (uint16_t i = 0; i < n; i++) {
         dump_one(&dump_tmp[i], i);
     }
-    printk("===== totem_ble HOST_EVENT_LOG dump end =====\n\n");
+    printk("===== totem_diag RAM ring end =====\n\n");
 
     totem_host_event_log_persist();
 }
@@ -249,38 +329,39 @@ static void dump_work_handler(struct k_work *work) {
 
 #if IS_ENABLED(CONFIG_SETTINGS)
 static int hevt_settings_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
-    const char *next;
-    if (settings_name_steq(name, "hevt", &next) && !next) {
-        if (len == 0 || len > sizeof(struct totem_host_event_blob)) {
-            return -EINVAL;
-        }
-
-        /* Static buffer: settings load runs on a small stack. */
-        memset(&persist_blob, 0, sizeof(persist_blob));
-        int rc = read_cb(cb_arg, &persist_blob, MIN(len, sizeof(persist_blob)));
-        if (rc < 0) {
-            return rc;
-        }
-        if (persist_blob.magic != BLOB_MAGIC || persist_blob.count > RING_CAP) {
-            LOG_WRN("totem_ble hevt settings invalid magic/count");
-            return 0;
-        }
-
-        k_mutex_lock(&ring_mu, K_FOREVER);
-        ring_head = 0;
-        ring_count = 0;
-        for (uint16_t i = 0; i < persist_blob.count; i++) {
-            ring[ring_head] = persist_blob.ev[i];
-            ring_head = (uint16_t)((ring_head + 1) % RING_CAP);
-            ring_count++;
-        }
-        ring_seq = persist_blob.seq;
-        events_since_persist = 0;
-        k_mutex_unlock(&ring_mu);
-        LOG_INF("totem_ble hevt restored count=%u seq=%u", persist_blob.count, persist_blob.seq);
+    if (strncmp(name, "dlog/", 5) != 0 || name[5] < '0' || name[5] > '9' || name[6] != '\0') {
+        return -ENOENT;
+    }
+    uint8_t slot = (uint8_t)(name[5] - '0');
+    if (slot >= JOURNAL_SLOTS || len < offsetof(struct totem_diag_block, ev) + sizeof(uint32_t) ||
+        len > sizeof(struct totem_diag_block)) {
         return 0;
     }
-    return -ENOENT;
+
+    struct totem_diag_block *block = &restored_blocks[slot];
+    memset(block, 0, sizeof(*block));
+    int rc = read_cb(cb_arg, block, len);
+    if (rc < 0) {
+        return rc;
+    }
+    size_t expected = offsetof(struct totem_diag_block, ev) +
+                      (size_t)block->count * sizeof(struct totem_host_event) + sizeof(block->crc);
+    uint32_t crc = crc32_ieee((const uint8_t *)block, offsetof(struct totem_diag_block, crc));
+    if (block->magic != BLOCK_MAGIC || block->version != BLOCK_VERSION || block->slot != slot ||
+        block->count > BLOCK_EVENTS || len != expected || block->crc != crc) {
+        LOG_WRN("totem_diag ignored invalid journal slot=%u", slot);
+        return 0;
+    }
+    restored_valid[slot] = true;
+    if (block->journal_seq >= journal_seq) {
+        journal_seq = block->journal_seq;
+        next_slot = (uint8_t)((slot + 1) % JOURNAL_SLOTS);
+    }
+    uint32_t last_event_seq = block->first_event_seq + block->count - 1;
+    if (last_event_seq > persisted_event_seq) {
+        persisted_event_seq = last_event_seq;
+    }
+    return 0;
 }
 
 SETTINGS_STATIC_HANDLER_DEFINE(totem_hevt, "th", NULL, hevt_settings_set, NULL, NULL);
