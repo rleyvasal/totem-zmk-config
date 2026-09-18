@@ -33,6 +33,7 @@
 #endif
 
 #include <totem_studio_log.h>
+#include <totem_host_event_log.h>
 #include <totem_usb_quiet.h>
 
 int zmk_rpc_tx_raw_payload(const uint8_t *payload, size_t len);
@@ -127,7 +128,20 @@ int totem_studio_send_battery(const char *line) {
 }
 
 void zmk_studio_control_payload(const uint8_t *payload, size_t len) {
-    if (!payload || len < 2 || payload[0] != (uint8_t)'C') {
+    if (!payload || len < 2) {
+        return;
+    }
+    if (payload[0] == (uint8_t)'D' && payload[1] == (uint8_t)'1') {
+        /* USB diagnostic-log dump. This remains usable while host BLE is
+         * suppressed and does not rely on a keyboard combo reaching ZMK. */
+        usb_log_on = true;
+        dtr_was_up = false;
+        (void)send_line("totem_diag dump requested");
+        totem_host_event_log_request_dump();
+        (void)k_work_schedule(&totem_studio_log_work, K_NO_WAIT);
+        return;
+    }
+    if (payload[0] != (uint8_t)'C') {
         return;
     }
     bool on = payload[1] == (uint8_t)'1';

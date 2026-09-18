@@ -327,6 +327,8 @@ static void dump_work_handler(struct k_work *work) {
     totem_host_event_log_dump();
 }
 
+void totem_host_event_log_request_dump(void) { k_work_submit(&dump_work); }
+
 #if IS_ENABLED(CONFIG_SETTINGS)
 static int hevt_settings_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
     if (strncmp(name, "dlog/", 5) != 0 || name[5] < '0' || name[5] > '9' || name[6] != '\0') {
@@ -378,7 +380,7 @@ static int on_dump_pressed(struct zmk_behavior_binding *binding,
     ARG_UNUSED(binding);
     ARG_UNUSED(event);
     LOG_WRN("totem_ble hevt dump requested");
-    k_work_submit(&dump_work);
+    totem_host_event_log_request_dump();
     return ZMK_BEHAVIOR_OPAQUE;
 }
 

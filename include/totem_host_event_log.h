@@ -67,6 +67,9 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
 /** Print ring oldest→newest via printk (USB CDC when logging / console enabled). */
 void totem_host_event_log_dump(void);
 
+/** Queue a dump from a transport/control callback; never prints inline there. */
+void totem_host_event_log_request_dump(void);
+
 /** Force-save ring to settings now (also done periodically). */
 void totem_host_event_log_persist(void);
 
@@ -86,6 +89,7 @@ static inline void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t 
     (void)extra;
 }
 static inline void totem_host_event_log_dump(void) {}
+static inline void totem_host_event_log_request_dump(void) {}
 static inline void totem_host_event_log_persist(void) {}
 static inline void totem_diag_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
                                          uint8_t extra) {
