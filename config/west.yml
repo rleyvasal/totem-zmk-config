@@ -13,7 +13,9 @@ manifest:
       # zmk-next-logs-batt: USB HID must not fall back to BLE, last-cell battery,
       # framed Studio log TX. Must match this config branch or the left image
       # fails to link (zmk_battery_last_cell_soc, zmk_rpc_tx_raw_payload, …).
-      revision: fd192e037dcb718191b5edc96d49ef5be4a06b93
+      # d6bc4563: when USB HID is active, suppress only computer-facing BLE
+      # advertisements; the split link and Studio diagnostics remain up.
+      revision: d6bc45636651ae240dc7d73990b85fb02961a168
       import: app/west.yml
   self:
     path: config

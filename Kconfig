@@ -217,10 +217,10 @@ config TOTEM_USB_QUIET_HOST
 	depends on ZMK_USB && ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
 	default n
 	help
-	  Nuclear option: while the cable is up, stop host advertising and drop
-	  Mac/Windows links. Hides host BLE from the USB console, so it is not
-	  the USB-typing fix. Leave off; exclusive-host skips eviction when HID
-	  is USB instead. Module src/usb_host_quiet.c.
+	  While the cable is up, stop host advertising and drop Mac/Windows links
+	  once. The split BLE link and USB Studio diagnostics remain available.
+	  Use with the matching BLE patch, which suppresses only host advertising.
+	  Module src/usb_host_quiet.c.
 
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
