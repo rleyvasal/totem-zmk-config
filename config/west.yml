@@ -15,7 +15,8 @@ manifest:
       # fails to link (zmk_battery_last_cell_soc, zmk_rpc_tx_raw_payload, …).
       # a87562a6: preserve the last valid right-half battery reading across a
       # split disconnect; a fresh GATT read replaces it after reconnection.
-      revision: a87562a612c8f95c40b3ff650715ce792e23cd90
+      # 6848616d: diagnostic frames never block Bluetooth's workqueue.
+      revision: 6848616d6750070c6f646ac49a29cd0728077cda
       import: app/west.yml
   self:
     path: config

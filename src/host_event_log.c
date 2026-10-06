@@ -254,7 +254,16 @@ void totem_host_event_log_persist(void) {
 
 static int dump_send(const char *line) {
 #if IS_ENABLED(CONFIG_TOTEM_STUDIO_CONSOLE) || IS_ENABLED(CONFIG_ZMK_STUDIO_CONSOLE)
-    return totem_studio_send_diag_line(line);
+    /* Dumps run on their own queue. Briefly retry backpressure here, never
+     * in the live logger or the system/Bluetooth workqueue. */
+    for (int attempt = 0; attempt < 40; attempt++) {
+        int err = totem_studio_send_diag_line(line);
+        if (err != -EAGAIN) {
+            return err;
+        }
+        k_sleep(K_MSEC(5));
+    }
+    return -EAGAIN;
 #else
     printk("%s\n", line);
     return 0;
