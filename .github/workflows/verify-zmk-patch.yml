@@ -19,6 +19,9 @@ jobs:
       - name: Checkout config
         uses: actions/checkout@v5
 
+      - name: Test diagnostic dumps and BLE policy callbacks
+        run: python3 -m unittest discover -s tests -v
+
       - name: Require validated BLE policy
         shell: bash
         run: |
