@@ -1,5 +1,8 @@
 Automated ZMK bump (policy **A**: stable releases by default; `main`/arbitrary refs only via manual dispatch).
 
+Upstream is merged into the previously pinned `rleyvasal/zmk-next` firmware,
+preserving the custom Studio, runtime configuration, diagnostics, battery, and BLE changes.
+
 | | |
 |---|---|
 | **Mode** | `__MODE__` |
@@ -17,8 +20,8 @@ Automated ZMK bump (policy **A**: stable releases by default; `main`/arbitrary r
 - [ ] **Typing** — keys register on both halves; homerow mods and combos behave
 - [ ] **Profile switching** — `&bt BT_SEL` switches hosts and the newly-selected host types
 - [ ] **No cross-talk** — only the active host stays connected; the other shows disconnected
-- [ ] **Idle go-dark** — after ~20 min idle the host disconnects and does NOT wake/flap (test the plugged-in / external-monitor Mac specifically)
-- [ ] **Reconnect** — a keypress wakes it, the host reconnects and types cleanly (macOS included, no "connected but can't type")
+- [ ] **Reconnect** — the selected host reconnects and types cleanly after a disconnect; USB typing remains stable
+- [ ] **Diagnostics** — retained logs can be retrieved and enabling live logs does not stall typing
 - [ ] **Battery** — idle drain in the normal range (~0.5–0.9 %/hr), no connect/disconnect churn
 
 Merge to adopt this ZMK version. If anything regresses, close without merging (and open an issue with what broke).
