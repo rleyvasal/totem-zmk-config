@@ -25,6 +25,7 @@
 
 #include <drivers/behavior.h>
 #include <zmk/behavior.h>
+#include <zmk/settings.h>
 
 #include <totem_host_event_log.h>
 #include <totem_studio_log.h>
@@ -32,6 +33,10 @@
 LOG_MODULE_REGISTER(host_event_log, CONFIG_ZMK_LOG_LEVEL);
 
 #if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
+
+#if IS_ENABLED(CONFIG_SETTINGS) && !defined(ZMK_SETTINGS_LOADED_HOOK_VERSION)
+#error "Persistent diagnostics require a ZMK revision with the post-settings-load hook"
+#endif
 
 #define RING_CAP CONFIG_TOTEM_HOST_EVENT_LOG_SIZE
 #define SETTINGS_KEY_PREFIX "th/dlog"
@@ -151,7 +156,7 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
     };
 
     k_mutex_lock(&ring_mu, K_FOREVER);
-    /* Pre-load records stay in RAM; settings commit rebases their sequence. */
+    /* The post-load hook places early events after the saved journal tail. */
     ring[ring_head] = e;
     ring_head = (uint16_t)((ring_head + 1) % RING_CAP);
     if (ring_count < RING_CAP) {
@@ -260,7 +265,15 @@ void totem_host_event_log_persist(void) {
 
 static int dump_send(const char *line) {
 #if IS_ENABLED(CONFIG_TOTEM_STUDIO_CONSOLE) || IS_ENABLED(CONFIG_ZMK_STUDIO_CONSOLE)
-    return totem_studio_send_diag_line(line);
+    /* Only the dedicated dump queue waits for TX space; live logging never waits. */
+    for (int attempt = 0; attempt < 40; attempt++) {
+        int err = totem_studio_send_diag_line(line);
+        if (err != -EAGAIN) {
+            return err;
+        }
+        k_sleep(K_MSEC(5));
+    }
+    return -EAGAIN;
 #else
     printk("%s\n", line);
     return 0;
@@ -420,11 +433,10 @@ static int hevt_settings_set(const char *name, size_t len, settings_read_cb read
     return 0;
 }
 
-static int hevt_settings_commit(void) {
+void zmk_settings_loaded(void) {
     k_mutex_lock(&ring_mu, K_FOREVER);
     if (!journal_ready) {
-        /* All journal slots have loaded. Preserve early boot/fault records
-         * after the saved tail, before allowing any new flash writes. */
+        /* main() calls this after all settings callbacks and their lock release. */
         ring_seq = persisted_event_seq + ring_count;
         journal_ready = true;
     }
@@ -433,11 +445,9 @@ static int hevt_settings_commit(void) {
     if (pending) {
         schedule_persist_coalesced(true);
     }
-    return 0;
 }
 
-SETTINGS_STATIC_HANDLER_DEFINE(totem_hevt, "th", NULL, hevt_settings_set,
-                               hevt_settings_commit, NULL);
+SETTINGS_STATIC_HANDLER_DEFINE(totem_hevt, "th", NULL, hevt_settings_set, NULL, NULL);
 #endif /* CONFIG_SETTINGS */
 
 /* --- dump behavior: &host_log_dump --- */
