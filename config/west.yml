@@ -16,7 +16,8 @@ manifest:
       # a87562a6: preserve the last valid right-half battery reading across a
       # split disconnect; a fresh GATT read replaces it after reconnection.
       # 6848616d: diagnostic frames never block Bluetooth's workqueue.
-      revision: 6848616d6750070c6f646ac49a29cd0728077cda
+      # d42fe223: reject stale BLE connections before sending HID reports.
+      revision: d42fe2236cacb542260fe5e4f6e95494979f12b8
       import: app/west.yml
   self:
     path: config
