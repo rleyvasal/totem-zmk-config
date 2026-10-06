@@ -13,6 +13,7 @@
  */
 
 #include <string.h>
+#include <errno.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -26,6 +27,7 @@
 #include <zmk/behavior.h>
 
 #include <totem_host_event_log.h>
+#include <totem_studio_log.h>
 
 LOG_MODULE_REGISTER(host_event_log, CONFIG_ZMK_LOG_LEVEL);
 
@@ -80,63 +82,24 @@ static bool persist_requested;
 
 /* Static init: settings handlers and BLE callbacks may run before SYS_INIT. */
 static K_MUTEX_DEFINE(ring_mu);
+static K_MUTEX_DEFINE(persist_mu);
 
 /* Static buffers — never put the full blob on a call stack. */
 static struct totem_diag_block persist_block;
 static struct totem_diag_block restored_blocks[JOURNAL_SLOTS];
 static bool restored_valid[JOURNAL_SLOTS];
 static struct totem_host_event dump_tmp[RING_CAP];
+static struct totem_diag_block dump_blocks[JOURNAL_SLOTS];
+static bool dump_valid[JOURNAL_SLOTS];
+static K_MUTEX_DEFINE(dump_mu);
+static struct k_work_q dump_queue;
+K_THREAD_STACK_DEFINE(dump_stack, 1536);
 
 static void dump_work_handler(struct k_work *work);
 static void persist_work_handler(struct k_work *work);
 
 static K_WORK_DEFINE(dump_work, dump_work_handler);
 static K_WORK_DELAYABLE_DEFINE(persist_work, persist_work_handler);
-
-static const char *evt_name(uint8_t type) {
-    switch (type) {
-    case TOTEM_HEVT_DISC:
-        return "disc";
-    case TOTEM_HEVT_CONN:
-        return "conn";
-    case TOTEM_HEVT_CONN_FAIL:
-        return "conn_fail";
-    case TOTEM_HEVT_SEC_OK:
-        return "sec_ok";
-    case TOTEM_HEVT_SEC_FAIL:
-        return "sec_fail";
-    case TOTEM_HEVT_BG_EVICT:
-        return "bg_evict";
-    case TOTEM_HEVT_ACTIVE_DOWN_ARM:
-        return "active_down";
-    case TOTEM_HEVT_WATCH_ARM:
-        return "watch_arm";
-    case TOTEM_HEVT_WATCH_STEP:
-        return "watch_step";
-    case TOTEM_HEVT_PROFILE_CHANGED:
-        return "prof_chg";
-    case TOTEM_HEVT_IDENTITY:
-        return "identity";
-    case TOTEM_HEVT_CLASS_A_SUSPECT:
-        return "class_a";
-    case TOTEM_HEVT_THRASH_WIN:
-        return "thrash_win";
-    case TOTEM_HEVT_BOOT:
-        return "boot";
-    case TOTEM_HEVT_FAULT:
-        return "fault";
-    case TOTEM_HEVT_USB:
-        return "usb";
-    case TOTEM_HEVT_ADV:
-        return "adv";
-    case TOTEM_HEVT_SPLIT:
-        return "split";
-    case TOTEM_HEVT_REPEAT:
-        return "repeat";
-    default:
-        return "unknown";
-    }
-}
 
 static void ring_get_ordered(struct totem_host_event *out, uint16_t *out_count) {
     uint16_t n = ring_count;
@@ -151,17 +114,23 @@ static void ring_get_ordered(struct totem_host_event *out, uint16_t *out_count) 
     }
 }
 
-static void schedule_persist_coalesced(void) {
+static void schedule_persist_coalesced(bool urgent) {
+    k_mutex_lock(&ring_mu, K_FOREVER);
     persist_requested = true;
     int64_t now = k_uptime_get();
     int64_t elapsed = now - last_persist_uptime_ms;
-    int32_t wait_ms = 0;
+    int32_t wait_ms = urgent ? 0 : PERSIST_MIN_INTERVAL_MS;
 
     if (last_persist_uptime_ms != 0 && elapsed < PERSIST_MIN_INTERVAL_MS) {
         wait_ms = (int32_t)(PERSIST_MIN_INTERVAL_MS - elapsed);
     }
+    k_mutex_unlock(&ring_mu);
     /* Coalesce: many thrash events → one delayed flash write. */
-    k_work_reschedule(&persist_work, K_MSEC(wait_ms));
+    if (urgent) {
+        (void)k_work_reschedule(&persist_work, K_MSEC(wait_ms));
+    } else {
+        (void)k_work_schedule(&persist_work, K_MSEC(wait_ms));
+    }
 }
 
 void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
@@ -197,28 +166,27 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
 
     /* A quiet failure may produce only one record, so also schedule a bounded
      * time-based flush. The work item coalesces storms into one write. */
-    ARG_UNUSED(need_persist);
-    schedule_persist_coalesced();
+    schedule_persist_coalesced(need_persist);
 }
 
 static void persist_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
-    if (!persist_requested) {
-        return;
-    }
     totem_host_event_log_persist();
 }
 
 void totem_host_event_log_persist(void) {
 #if IS_ENABLED(CONFIG_SETTINGS)
+    k_mutex_lock(&persist_mu, K_FOREVER);
     int64_t now = k_uptime_get();
+    k_mutex_lock(&ring_mu, K_FOREVER);
     if (last_persist_uptime_ms != 0 && (now - last_persist_uptime_ms) < PERSIST_MIN_INTERVAL_MS) {
         /* Too soon (e.g. dump requested during thrash) — defer. */
-        schedule_persist_coalesced();
+        k_mutex_unlock(&ring_mu);
+        k_mutex_unlock(&persist_mu);
+        schedule_persist_coalesced(true);
         return;
     }
 
-    k_mutex_lock(&ring_mu, K_FOREVER);
     uint32_t first_available = ring_count ? ring_seq - ring_count + 1 : ring_seq + 1;
     uint32_t first_new = persisted_event_seq + 1;
     if (first_new < first_available) {
@@ -227,12 +195,13 @@ void totem_host_event_log_persist(void) {
     if (first_new > ring_seq) {
         persist_requested = false;
         k_mutex_unlock(&ring_mu);
+        k_mutex_unlock(&persist_mu);
         return;
     }
     uint32_t pending = ring_seq - first_new + 1;
     uint16_t count = (uint16_t)MIN(pending, (uint32_t)BLOCK_EVENTS);
-    /* Preserve the newest records if a long storm exceeded one block. */
-    first_new = ring_seq - count + 1;
+    /* Write the oldest available pending records first; subsequent blocks
+     * preserve their sequence instead of silently skipping to the tail. */
     uint16_t start = (uint16_t)((ring_head + RING_CAP - ring_count) % RING_CAP);
 
     memset(&persist_block, 0, sizeof(persist_block));
@@ -252,74 +221,147 @@ void totem_host_event_log_persist(void) {
     uint8_t slot = next_slot;
     char key[20];
     snprintk(key, sizeof(key), SETTINGS_KEY_PREFIX "/%u", slot);
-    size_t len = offsetof(struct totem_diag_block, ev) +
-                 (size_t)count * sizeof(struct totem_host_event) + sizeof(persist_block.crc);
+    uint32_t last_copied_seq = first_new + count - 1;
     persist_requested = false;
     /* Copy under lock; write after unlock so BLE callbacks are not blocked on flash. */
     k_mutex_unlock(&ring_mu);
 
-    int err = settings_save_one(key, &persist_block, len);
+    /* crc is at the end of the fixed-size struct. Always write the complete
+     * block, including unused zeroed event slots and the actual CRC. */
+    int err = settings_save_one(key, &persist_block, sizeof(persist_block));
+    k_mutex_lock(&ring_mu, K_FOREVER);
     last_persist_uptime_ms = k_uptime_get();
     if (err) {
         LOG_WRN("totem_diag persist failed err=%d count=%u", err, count);
+        persist_requested = true;
     } else {
-        k_mutex_lock(&ring_mu, K_FOREVER);
-        persisted_event_seq = ring_seq;
+        persisted_event_seq = last_copied_seq;
         restored_blocks[slot] = persist_block;
         restored_valid[slot] = true;
         next_slot = (uint8_t)((slot + 1) % JOURNAL_SLOTS);
-        k_mutex_unlock(&ring_mu);
         LOG_DBG("totem_diag persisted slot=%u count=%u seq=%u", slot, count, journal_seq);
+    }
+    bool more_pending = persist_requested || ring_seq > persisted_event_seq;
+    k_mutex_unlock(&ring_mu);
+    k_mutex_unlock(&persist_mu);
+    if (more_pending) {
+        schedule_persist_coalesced(true);
     }
 #else
     LOG_WRN("totem_ble hevt persist skipped (SETTINGS off)");
-    persist_requested = false;
 #endif
 }
 
-static void dump_one(const struct totem_host_event *e, uint16_t i) {
-    printk("totem_ble hevt i=%u t_ms=%u type=%s(%u) idx=%d active=%d reason=0x%02x "
-           "thrash_win=%u extra=0x%02x\n",
-           i, e->uptime_ms, evt_name(e->type), e->type, (int)e->idx, (int)e->active, e->reason,
-           e->thrash_win, e->extra);
+static int dump_send(const char *line) {
+#if IS_ENABLED(CONFIG_TOTEM_STUDIO_CONSOLE) || IS_ENABLED(CONFIG_ZMK_STUDIO_CONSOLE)
+    return totem_studio_send_diag_line(line);
+#else
+    printk("%s\n", line);
+    return 0;
+#endif
 }
 
-static void dump_persistent(void) {
-    printk("===== totem_diag persistent journal begin slots=%u =====\n", JOURNAL_SLOTS);
-    /* next_slot is the oldest candidate after a complete rotation. */
-    for (uint8_t off = 0; off < JOURNAL_SLOTS; off++) {
-        uint8_t slot = (uint8_t)((next_slot + off) % JOURNAL_SLOTS);
-        if (!restored_valid[slot]) {
-            continue;
-        }
-        const struct totem_diag_block *block = &restored_blocks[slot];
-        printk("totem_diag block slot=%u seq=%u first=%u count=%u\n", slot, block->journal_seq,
-               block->first_event_seq, block->count);
-        for (uint8_t i = 0; i < block->count; i++) {
-            dump_one(&block->ev[i], i);
-        }
+static int dump_data(uint32_t id, uint32_t *ordinal, const char *detail) {
+    char line[120];
+    int len = snprintk(line, sizeof(line), "totem_diag d=%u n=%u %s", id, *ordinal, detail);
+    if (len < 0 || len >= sizeof(line)) {
+        return -EMSGSIZE;
     }
-    printk("===== totem_diag persistent journal end =====\n");
+    int err = dump_send(line);
+    if (err == 0) {
+        (*ordinal)++;
+    }
+    return err;
+}
+
+static int dump_event(uint32_t id, uint32_t *ordinal, const struct totem_host_event *e,
+                      char source, uint8_t slot, uint32_t seq) {
+    char detail[90];
+    int len = snprintk(detail, sizeof(detail),
+                       "e s=%c%u q=%u t=%u k=%u i=%d a=%d r=%u w=%u x=%u", source,
+                       slot, seq, e->uptime_ms, e->type, (int)e->idx, (int)e->active,
+                       e->reason, e->thrash_win, e->extra);
+    if (len < 0 || len >= sizeof(detail)) {
+        return -EMSGSIZE;
+    }
+    return dump_data(id, ordinal, detail);
 }
 
 void totem_host_event_log_dump(void) {
     uint16_t n = 0;
     uint32_t seq;
+    uint8_t start_slot;
+    uint32_t id = k_uptime_get_32();
+    uint32_t expected = 0;
+    uint32_t ordinal = 0;
+    uint32_t persistent_events = 0;
+    uint8_t blocks = 0;
+    char line[120];
+    char detail[90];
+    int len;
+    int err;
+
+    k_mutex_lock(&dump_mu, K_FOREVER);
 
     k_mutex_lock(&ring_mu, K_FOREVER);
     ring_get_ordered(dump_tmp, &n);
     seq = ring_seq;
+    memcpy(dump_blocks, restored_blocks, sizeof(dump_blocks));
+    memcpy(dump_valid, restored_valid, sizeof(dump_valid));
+    start_slot = next_slot;
     k_mutex_unlock(&ring_mu);
 
-    dump_persistent();
-    printk("\n===== totem_diag RAM ring begin count=%u seq=%u cap=%u =====\n", n, seq,
-           RING_CAP);
-    for (uint16_t i = 0; i < n; i++) {
-        dump_one(&dump_tmp[i], i);
+    for (uint8_t slot = 0; slot < JOURNAL_SLOTS; slot++) {
+        if (dump_valid[slot]) {
+            blocks++;
+            persistent_events += dump_blocks[slot].count;
+        }
     }
-    printk("===== totem_diag RAM ring end =====\n\n");
+    expected = blocks + persistent_events + n;
+    len = snprintk(line, sizeof(line),
+                   "totem_diag begin id=%u lines=%u blocks=%u persisted=%u ram=%u seq=%u",
+                   id, expected, blocks, persistent_events, n, seq);
+    if (len < 0 || len >= sizeof(line) || dump_send(line) != 0) {
+        goto out;
+    }
 
-    totem_host_event_log_persist();
+    /* Each data line has a consecutive ordinal. A receiver must observe all
+     * ordinals and the matching end marker before accepting the dump. */
+    for (uint8_t off = 0; off < JOURNAL_SLOTS; off++) {
+        uint8_t slot = (uint8_t)((start_slot + off) % JOURNAL_SLOTS);
+        if (!dump_valid[slot]) {
+            continue;
+        }
+        const struct totem_diag_block *block = &dump_blocks[slot];
+        len = snprintk(detail, sizeof(detail), "b s=%u j=%u first=%u count=%u", slot,
+                       block->journal_seq, block->first_event_seq, block->count);
+        if (len < 0 || len >= sizeof(detail) || dump_data(id, &ordinal, detail) != 0) {
+            goto out;
+        }
+        for (uint8_t i = 0; i < block->count; i++) {
+            err = dump_event(id, &ordinal, &block->ev[i], 'p', slot,
+                             block->first_event_seq + i);
+            if (err != 0) {
+                goto out;
+            }
+        }
+    }
+    for (uint16_t i = 0; i < n; i++) {
+        err = dump_event(id, &ordinal, &dump_tmp[i], 'r', 0, seq - n + i + 1);
+        if (err != 0) {
+            goto out;
+        }
+    }
+    if (ordinal == expected) {
+        len = snprintk(line, sizeof(line), "totem_diag end id=%u lines=%u status=ok", id,
+                       ordinal);
+        if (len >= 0 && len < sizeof(line)) {
+            (void)dump_send(line);
+        }
+    }
+
+out:
+    k_mutex_unlock(&dump_mu);
 }
 
 static void dump_work_handler(struct k_work *work) {
@@ -327,7 +369,15 @@ static void dump_work_handler(struct k_work *work) {
     totem_host_event_log_dump();
 }
 
-void totem_host_event_log_request_dump(void) { k_work_submit(&dump_work); }
+void totem_host_event_log_request_dump(void) { (void)k_work_submit_to_queue(&dump_queue, &dump_work); }
+
+static int host_diag_dump_init(void) {
+    k_work_queue_start(&dump_queue, dump_stack, K_THREAD_STACK_SIZEOF(dump_stack),
+                       K_PRIO_PREEMPT(10), NULL);
+    return 0;
+}
+
+SYS_INIT(host_diag_dump_init, APPLICATION, 1);
 
 #if IS_ENABLED(CONFIG_SETTINGS)
 static int hevt_settings_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
@@ -335,8 +385,7 @@ static int hevt_settings_set(const char *name, size_t len, settings_read_cb read
         return -ENOENT;
     }
     uint8_t slot = (uint8_t)(name[5] - '0');
-    if (slot >= JOURNAL_SLOTS || len < offsetof(struct totem_diag_block, ev) + sizeof(uint32_t) ||
-        len > sizeof(struct totem_diag_block)) {
+    if (slot >= JOURNAL_SLOTS || len != sizeof(struct totem_diag_block)) {
         return 0;
     }
 
@@ -346,11 +395,10 @@ static int hevt_settings_set(const char *name, size_t len, settings_read_cb read
     if (rc < 0) {
         return rc;
     }
-    size_t expected = offsetof(struct totem_diag_block, ev) +
-                      (size_t)block->count * sizeof(struct totem_host_event) + sizeof(block->crc);
     uint32_t crc = crc32_ieee((const uint8_t *)block, offsetof(struct totem_diag_block, crc));
     if (block->magic != BLOCK_MAGIC || block->version != BLOCK_VERSION || block->slot != slot ||
-        block->count > BLOCK_EVENTS || len != expected || block->crc != crc) {
+        block->count == 0 || block->count > BLOCK_EVENTS || rc != sizeof(*block) ||
+        block->crc != crc) {
         LOG_WRN("totem_diag ignored invalid journal slot=%u", slot);
         return 0;
     }

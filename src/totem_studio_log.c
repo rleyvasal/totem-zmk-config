@@ -114,6 +114,16 @@ static bool studio_cdc_ready(void) {
 
 static bool studio_tx_ready(void) { return usb_log_on && studio_cdc_ready(); }
 
+int totem_studio_send_diag_line(const char *line) {
+    if (!line || !line[0] || strnlen(line, LINE_MAX) >= LINE_MAX) {
+        return -EMSGSIZE;
+    }
+    if (!studio_cdc_ready()) {
+        return -EAGAIN;
+    }
+    return send_line(line);
+}
+
 int totem_studio_send_battery(const char *line) {
     uint8_t payload[LINE_MAX + 1];
     size_t n;
@@ -136,7 +146,6 @@ void zmk_studio_control_payload(const uint8_t *payload, size_t len) {
          * suppressed and does not rely on a keyboard combo reaching ZMK. */
         usb_log_on = true;
         dtr_was_up = false;
-        (void)send_line("totem_diag dump requested");
         totem_host_event_log_request_dump();
         (void)k_work_schedule(&totem_studio_log_work, K_NO_WAIT);
         return;

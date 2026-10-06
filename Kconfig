@@ -436,8 +436,9 @@ config TOTEM_HOST_EVENT_LOG
 	  Record USB, advertising, BLE host, split, recovery and fault transitions
 	  into a RAM ring. Periodically persist compact batches into a rotating,
 	  CRC-checked settings journal so the most recent records survive a reset.
-	  Dump with &host_log_dump (combo) via printk over USB CDC when console
-	  logging is enabled (zmk-usb-logging snippet or CONFIG_ZMK_USB_LOGGING).
+	  Dump with &host_log_dump (combo) over USB CDC. On the Studio image,
+	  numbered framed lines and an end marker allow a host to verify a full
+	  dump. The zmk-usb-logging image uses printk instead.
 	  Capture works on the normal production image without USB attached.
 	  Implemented in src/host_event_log.c. Central sources; dump on left.
 
@@ -464,8 +465,8 @@ config TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS
 	range 5000 600000
 	help
 	  Coalesce journal writes during dual-host thrash. RAM ring still records
-	  every event; only NVS is throttled. Dump still requests a persist
-	  (subject to this interval).
+	  every event; only NVS is throttled. A dump includes the current RAM ring
+	  without forcing a synchronous flash write.
 
 config TOTEM_HOST_EVENT_LOG_BLOCK_SIZE
 	int "Events per persistent journal block"

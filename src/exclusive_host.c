@@ -478,7 +478,6 @@ static int exclusive_host_profile_changed(const zmk_event_t *eh) {
     totem_host_event_log_record(TOTEM_HEVT_PROFILE_CHANGED, (int8_t)active, (int8_t)active,
                                 zmk_ble_active_profile_is_connected() ? 1 : 0, 0,
                                 zmk_ble_active_profile_is_open() ? 1 : 0);
-    totem_host_event_log_persist();
     exclusive_host_evict_all(true);
     exclusive_host_schedule_retry();
     return ZMK_EV_EVENT_BUBBLE;

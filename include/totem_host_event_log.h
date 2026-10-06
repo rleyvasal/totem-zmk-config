@@ -64,13 +64,13 @@ enum totem_host_evt {
 void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
                                  uint8_t thrash_win, uint8_t extra);
 
-/** Print ring oldest→newest via printk (USB CDC when logging / console enabled). */
+/** Stream a numbered journal/RAM snapshot (framed Studio CDC or plain printk). */
 void totem_host_event_log_dump(void);
 
 /** Queue a dump from a transport/control callback; never prints inline there. */
 void totem_host_event_log_request_dump(void);
 
-/** Force-save ring to settings now (also done periodically). */
+/** Request an immediate settings save, subject to the flash rate limit. */
 void totem_host_event_log_persist(void);
 
 /** Record a non-host diagnostic transition using the shared compact schema. */

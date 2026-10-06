@@ -35,7 +35,7 @@ On the ADJ layer, press the target profile’s `&bt BT_SEL`. Exclusive-host disc
 
 **Wake behavior:** The selected host remains connected while the keyboard is idle, allowing a keypress to wake hosts whose Bluetooth radio is armed for wake. The inactive host is disconnected. If the selected computer powers down its Bluetooth radio during sleep, no disconnected keyboard can guarantee wake until that computer scans and reconnects.
 
-**Host event log:** **off** on the production image (flash writes were a hang suspect). The `[` + `X` combo is a no-op until `CONFIG_TOTEM_HOST_EVENT_LOG=y`. Prefer the USB console boot lines (`Loaded … address`, `active=`) on a `totem_left_logging` flash if you need a dump; do **not** stay on the logging image while testing profile switches.
+**Host event log:** enabled on the production left image. Recent events are kept in RAM and copied into rotating, CRC-checked settings blocks. Writes are coalesced and rate-limited; profile-change callbacks do not write flash directly. With the Studio USB port connected, run `python tools/read_diag_dump.py /dev/cu.usbmodem101` (requires `pyserial`) to request a `D1` dump. The reader accepts it only when every numbered line and the matching end marker arrive. Replace the port path for your system. The `[` + `X` combo also requests a dump; it does not clear saved logs.
 
 **Active-host isolation (FAL):** **off.** Field failure 2026-07-21 (Mac→Win OK, return to Mac broken). Exclusive-host eviction is the dual-host policy that survived a week of daily use. Do not enable `CONFIG_TOTEM_ACTIVE_ADV_FILTER` until Mac↔Win↔Mac is proven.
 
