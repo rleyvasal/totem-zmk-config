@@ -15,7 +15,8 @@ manifest:
       # fails to link (zmk_battery_last_cell_soc, zmk_rpc_tx_raw_payload, …).
       # a87562a6: preserve the last valid right-half battery reading across a
       # split disconnect; a fresh GATT read replaces it after reconnection.
-      revision: a87562a612c8f95c40b3ff650715ce792e23cd90
+      # 96da00d9: reject stale BLE connections before sending HID reports.
+      revision: 96da00d91a9b7ed08f32031d12071db33c8cc720
       import: app/west.yml
   self:
     path: config

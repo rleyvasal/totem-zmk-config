@@ -79,6 +79,7 @@ static uint8_t next_slot;
 static uint16_t events_since_persist;
 static int64_t last_persist_uptime_ms;
 static bool persist_requested;
+static bool journal_ready = !IS_ENABLED(CONFIG_SETTINGS);
 
 /* Static init: settings handlers and BLE callbacks may run before SYS_INIT. */
 static K_MUTEX_DEFINE(ring_mu);
@@ -117,6 +118,10 @@ static void ring_get_ordered(struct totem_host_event *out, uint16_t *out_count) 
 static void schedule_persist_coalesced(bool urgent) {
     k_mutex_lock(&ring_mu, K_FOREVER);
     persist_requested = true;
+    if (!journal_ready) {
+        k_mutex_unlock(&ring_mu);
+        return;
+    }
     int64_t now = k_uptime_get();
     int64_t elapsed = now - last_persist_uptime_ms;
     int32_t wait_ms = urgent ? 0 : PERSIST_MIN_INTERVAL_MS;
@@ -146,11 +151,7 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
     };
 
     k_mutex_lock(&ring_mu, K_FOREVER);
-    /* Continue event ordering across boots after settings restored the latest
-     * persisted sequence. */
-    if (ring_seq < persisted_event_seq) {
-        ring_seq = persisted_event_seq;
-    }
+    /* Pre-load records stay in RAM; settings commit rebases their sequence. */
     ring[ring_head] = e;
     ring_head = (uint16_t)((ring_head + 1) % RING_CAP);
     if (ring_count < RING_CAP) {
@@ -179,6 +180,11 @@ void totem_host_event_log_persist(void) {
     k_mutex_lock(&persist_mu, K_FOREVER);
     int64_t now = k_uptime_get();
     k_mutex_lock(&ring_mu, K_FOREVER);
+    if (!journal_ready) {
+        k_mutex_unlock(&ring_mu);
+        k_mutex_unlock(&persist_mu);
+        return;
+    }
     if (last_persist_uptime_ms != 0 && (now - last_persist_uptime_ms) < PERSIST_MIN_INTERVAL_MS) {
         /* Too soon (e.g. dump requested during thrash) — defer. */
         k_mutex_unlock(&ring_mu);
@@ -414,7 +420,24 @@ static int hevt_settings_set(const char *name, size_t len, settings_read_cb read
     return 0;
 }
 
-SETTINGS_STATIC_HANDLER_DEFINE(totem_hevt, "th", NULL, hevt_settings_set, NULL, NULL);
+static int hevt_settings_commit(void) {
+    k_mutex_lock(&ring_mu, K_FOREVER);
+    if (!journal_ready) {
+        /* All journal slots have loaded. Preserve early boot/fault records
+         * after the saved tail, before allowing any new flash writes. */
+        ring_seq = persisted_event_seq + ring_count;
+        journal_ready = true;
+    }
+    bool pending = ring_seq > persisted_event_seq;
+    k_mutex_unlock(&ring_mu);
+    if (pending) {
+        schedule_persist_coalesced(true);
+    }
+    return 0;
+}
+
+SETTINGS_STATIC_HANDLER_DEFINE(totem_hevt, "th", NULL, hevt_settings_set,
+                               hevt_settings_commit, NULL);
 #endif /* CONFIG_SETTINGS */
 
 /* --- dump behavior: &host_log_dump --- */

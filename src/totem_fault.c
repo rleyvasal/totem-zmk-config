@@ -161,7 +161,6 @@ void totem_fault_report_and_clear(void) {
 
     totem_host_event_log_record(TOTEM_HEVT_FAULT, (int8_t)fault_rec.channel, -1,
                                 (uint8_t)fault_rec.reason, 0, fault_rec.kind);
-    totem_host_event_log_persist();
 
     /* Report exactly once: leaving it valid would make every later boot look like it
      * had just crashed. */

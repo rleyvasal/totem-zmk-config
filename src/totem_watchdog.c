@@ -124,7 +124,6 @@ static void totem_capture_reset_reason(void) {
 
     /* idx/active are meaningless for a boot event; -1 keeps them out of the way. */
     totem_host_event_log_record(TOTEM_HEVT_BOOT, -1, -1, totem_reset_flags, 0, 0);
-    totem_host_event_log_persist();
 
     /* Clear so the *next* boot reports its own cause and not a sticky union of
      * every reset this board has ever taken (nRF RESETREAS is cumulative). */
@@ -354,6 +353,6 @@ static int totem_watchdog_init(void) {
 
 #endif /* CONFIG_TOTEM_WATCHDOG */
 
-/* APPLICATION level, late: the event ring must have loaded from settings first, or
- * the boot record lands in a ring that is about to be overwritten by the restore. */
+/* Capture reset/fault information before main(). The journal buffers these in
+ * RAM and enables persistence only after settings_load() restores its state. */
 SYS_INIT(totem_watchdog_init, APPLICATION, 99);

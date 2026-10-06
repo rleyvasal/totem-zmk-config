@@ -52,6 +52,7 @@ LOG_MODULE_REGISTER(exclusive_host, CONFIG_ZMK_LOG_LEVEL);
 
 static int64_t bg_ignore_until[ZMK_BLE_PROFILE_COUNT];
 static bool thrash_cap_logged;
+static int last_active_profile = -1;
 
 static void bg_clear_ignores(void) {
     memset(bg_ignore_until, 0, sizeof(bg_ignore_until));
@@ -322,7 +323,7 @@ static void exclusive_host_retry_work_handler(struct k_work *work) {
 static void exclusive_host_fallback_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
     /* Re-scan only: may catch a host whose address just became matchable. */
-    exclusive_host_evict_all(true);
+    exclusive_host_evict_all(false);
 }
 
 static K_WORK_DEFINE(exclusive_host_evict_work, exclusive_host_evict_work_handler);
@@ -377,9 +378,6 @@ static void exclusive_host_connected(struct bt_conn *conn, uint8_t err) {
     log_host_conn_event("connected", conn, 0);
     totem_host_event_log_record(TOTEM_HEVT_CONN, (int8_t)idx, (int8_t)active, 0,
                                 (uint8_t)thrash_win_count(), 0);
-    if (idx == active) {
-        bg_clear_ignores();
-    }
     /* Immediate try: known background hosts drop without waiting for L2. */
     k_work_submit(&exclusive_host_evict_work);
     exclusive_host_schedule_retry();
@@ -466,19 +464,25 @@ BT_CONN_CB_DEFINE(exclusive_host_cb) = {
 
 static int exclusive_host_profile_changed(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
-#if IS_ENABLED(CONFIG_TOTEM_BOND_HEAL)
-    active_auth_fail_streak = 0;
-#endif
-    thrash_clear();
-    bg_clear_ignores();
-    class_a_note_auth_event(false);
     int active = zmk_ble_active_profile_index();
+    /* This event also reports link changes; only an index change is a switch.
+     * The first notification establishes the profile restored from settings. */
+    bool switched = last_active_profile >= 0 && last_active_profile != active;
+    last_active_profile = active;
+    if (switched) {
+#if IS_ENABLED(CONFIG_TOTEM_BOND_HEAL)
+        active_auth_fail_streak = 0;
+#endif
+        thrash_clear();
+        bg_clear_ignores();
+        class_a_note_auth_event(false);
+    }
     TOTEM_BLE_INF("totem_ble profile_changed active=%d connected=%d open=%d", active,
             zmk_ble_active_profile_is_connected(), zmk_ble_active_profile_is_open());
     totem_host_event_log_record(TOTEM_HEVT_PROFILE_CHANGED, (int8_t)active, (int8_t)active,
                                 zmk_ble_active_profile_is_connected() ? 1 : 0, 0,
                                 zmk_ble_active_profile_is_open() ? 1 : 0);
-    exclusive_host_evict_all(true);
+    exclusive_host_evict_all(switched);
     exclusive_host_schedule_retry();
     return ZMK_EV_EVENT_BUBBLE;
 }
