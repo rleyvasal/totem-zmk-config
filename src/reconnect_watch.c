@@ -19,6 +19,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/hci.h>
+#include <zephyr/settings/settings.h>
 
 #include <zmk/ble.h>
 #include <zmk/event_manager.h>
@@ -59,6 +60,7 @@ enum reconnect_step {
 static enum reconnect_step next_step;
 /* true ⇒ light step 1 (active-down / storm); false ⇒ full reselect (BT_SEL). */
 static bool ladder_from_active_down;
+static int watch_profile_index;
 static struct k_work_delayable reconnect_watch_work;
 static struct k_work active_down_arm_work;
 
@@ -306,6 +308,11 @@ static void active_down_arm_work_handler(struct k_work *work) {
 
 static int reconnect_watch_profile_changed(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
+    int profile = zmk_ble_active_profile_index();
+    if (profile == watch_profile_index) {
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+    watch_profile_index = profile;
     reconnect_watch_arm_full();
     return ZMK_EV_EVENT_BUBBLE;
 }
@@ -363,10 +370,22 @@ BT_CONN_CB_DEFINE(reconnect_watch_cb) = {
 };
 
 static int reconnect_watch_init(void) {
+    watch_profile_index = zmk_ble_active_profile_index();
     k_work_init_delayable(&reconnect_watch_work, reconnect_watch_work_handler);
     k_work_init(&active_down_arm_work, active_down_arm_work_handler);
     return 0;
 }
+
+#if IS_ENABLED(CONFIG_SETTINGS)
+static int reconnect_watch_settings_commit(void) {
+    /* Settings set callbacks restore the profile before any commit callbacks. */
+    watch_profile_index = zmk_ble_active_profile_index();
+    return 0;
+}
+
+SETTINGS_STATIC_HANDLER_DEFINE(totem_watch, "totem_watch", NULL, NULL,
+                               reconnect_watch_settings_commit, NULL);
+#endif
 
 SYS_INIT(reconnect_watch_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 

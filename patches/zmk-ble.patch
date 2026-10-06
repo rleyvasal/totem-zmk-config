@@ -18,7 +18,7 @@ index 92b2107d..45d36797 100644
  
  int zmk_ble_set_device_name(char *name);
 diff --git a/app/src/ble.c b/app/src/ble.c
-index 51b172b9..44f29d42 100644
+index 51b172b9..f96d1a63 100644
 --- a/app/src/ble.c
 +++ b/app/src/ble.c
 @@ -13,7 +13,6 @@
@@ -669,14 +669,14 @@ index 51b172b9..44f29d42 100644
 -        // LOG_DBG("Directed advertising to %s", addr_str);
 -        // desired_adv = ZMK_ADV_DIR;
 +#endif
-     }
++    }
 +#if IS_ENABLED(CONFIG_ZMK_USB) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 +    /* USB HID and host BLE connection events contend for the same nRF52
 +     * scheduling budget. Keep the split radio link, but do not accept a
 +     * computer connection while cable HID is active. */
 +    if (zmk_usb_is_powered()) {
 +        desired_adv = ZMK_ADV_NONE;
-+    }
+     }
 +#endif
      LOG_DBG("advertising from %d to %d", advertising_status, desired_adv);
  
@@ -758,7 +758,7 @@ index 51b172b9..44f29d42 100644
      return 0;
  };
  
-@@ -223,6 +796,115 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
+@@ -223,6 +796,122 @@ static void update_advertising_callback(struct k_work *work) { update_advertisin
  
  K_WORK_DEFINE(update_advertising_work, update_advertising_callback);
  
@@ -824,8 +824,15 @@ index 51b172b9..44f29d42 100644
 + * advertise for the newly selected profile immediately. Without this, a switch
 + * while dark (or a race that left adv_throttled set) waits for another keypress
 + * before the target host can see the keyboard. */
++static uint8_t adv_profile_index;
++
 +static int adv_throttle_profile_changed_listener(const zmk_event_t *eh) {
 +    ARG_UNUSED(eh);
++    /* This event also reports link changes for the same selected profile. */
++    if (adv_profile_index == active_profile) {
++        return ZMK_EV_EVENT_BUBBLE;
++    }
++    adv_profile_index = active_profile;
 +#if IS_ENABLED(CONFIG_TOTEM_IDLE_DISCONNECT)
 +    idle_go_dark = false;
 +#endif
@@ -874,7 +881,7 @@ index 51b172b9..44f29d42 100644
  static void clear_profile_bond(uint8_t profile) {
      if (bt_addr_le_cmp(&profiles[profile].peer, BT_ADDR_LE_ANY)) {
          bt_unpair(BT_ID_DEFAULT, &profiles[profile].peer);
-@@ -258,6 +940,26 @@ int zmk_ble_profile_index(const bt_addr_le_t *addr) {
+@@ -258,6 +947,26 @@ int zmk_ble_profile_index(const bt_addr_le_t *addr) {
              return i;
          }
      }
@@ -901,7 +908,7 @@ index 51b172b9..44f29d42 100644
      return -ENODEV;
  }
  
-@@ -291,15 +993,60 @@ int zmk_ble_prof_select(uint8_t index) {
+@@ -291,15 +1000,60 @@ int zmk_ble_prof_select(uint8_t index) {
  
      LOG_DBG("profile %d", index);
      if (active_profile == index) {
@@ -963,7 +970,7 @@ index 51b172b9..44f29d42 100644
  
      return 0;
  };
-@@ -338,6 +1085,24 @@ int zmk_ble_prof_disconnect(uint8_t index) {
+@@ -338,6 +1092,24 @@ int zmk_ble_prof_disconnect(uint8_t index) {
  
  bt_addr_le_t *zmk_ble_active_profile_addr(void) { return &profiles[active_profile].peer; }
  
@@ -988,7 +995,7 @@ index 51b172b9..44f29d42 100644
  struct bt_conn *zmk_ble_active_profile_conn(void) {
      struct bt_conn *conn;
      bt_addr_le_t *addr = zmk_ble_active_profile_addr();
-@@ -345,11 +1110,24 @@ struct bt_conn *zmk_ble_active_profile_conn(void) {
+@@ -345,11 +1117,24 @@ struct bt_conn *zmk_ble_active_profile_conn(void) {
      if (!bt_addr_le_cmp(addr, BT_ADDR_LE_ANY)) {
          LOG_WRN("Not sending, no active address for current profile");
          return NULL;
@@ -1016,7 +1023,7 @@ index 51b172b9..44f29d42 100644
      return conn;
  }
  
-@@ -494,6 +1265,12 @@ static struct settings_handler profiles_handler = {
+@@ -494,6 +1279,12 @@ static struct settings_handler profiles_handler = {
  #endif /* IS_ENABLED(CONFIG_SETTINGS) */
  
  static bool is_conn_active_profile(const struct bt_conn *conn) {
@@ -1029,7 +1036,7 @@ index 51b172b9..44f29d42 100644
      return bt_addr_le_cmp(bt_conn_get_dst(conn), &profiles[active_profile].peer) == 0;
  }
  
-@@ -520,12 +1297,26 @@ static void connected(struct bt_conn *conn, uint8_t err) {
+@@ -520,12 +1311,26 @@ static void connected(struct bt_conn *conn, uint8_t err) {
  
      LOG_DBG("Connected %s", addr);
  
@@ -1056,7 +1063,7 @@ index 51b172b9..44f29d42 100644
  }
  
  static void disconnected(struct bt_conn *conn, uint8_t reason) {
-@@ -545,12 +1336,32 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
+@@ -545,12 +1350,32 @@ static void disconnected(struct bt_conn *conn, uint8_t reason) {
  
      // We need to do this in a work callback, otherwise the advertising update will still see the
      // connection for a profile as active, and not start advertising yet.
@@ -1089,7 +1096,7 @@ index 51b172b9..44f29d42 100644
  }
  
  static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err) {
-@@ -599,7 +1410,11 @@ static void auth_passkey_entry(struct bt_conn *conn) {
+@@ -599,7 +1424,11 @@ static void auth_passkey_entry(struct bt_conn *conn) {
      bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
  
      LOG_DBG("Passkey entry requested for %s", addr);
@@ -1102,7 +1109,7 @@ index 51b172b9..44f29d42 100644
      auth_passkey_entry_conn = bt_conn_ref(conn);
  }
  
-@@ -611,12 +1426,11 @@ static void auth_cancel(struct bt_conn *conn) {
+@@ -611,12 +1440,11 @@ static void auth_cancel(struct bt_conn *conn) {
      bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
  
  #if IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY)
@@ -1117,7 +1124,7 @@ index 51b172b9..44f29d42 100644
  #endif
  
      LOG_DBG("Pairing cancelled: %s", addr);
-@@ -665,6 +1479,20 @@ static void auth_pairing_complete(struct bt_conn *conn, bool bonded) {
+@@ -665,6 +1493,20 @@ static void auth_pairing_complete(struct bt_conn *conn, bool bonded) {
      update_advertising();
  };
  
@@ -1138,7 +1145,7 @@ index 51b172b9..44f29d42 100644
  static struct bt_conn_auth_cb zmk_ble_auth_cb_display = {
      .pairing_accept = auth_pairing_accept,
  // .passkey_display = auth_passkey_display,
-@@ -677,6 +1505,7 @@ static struct bt_conn_auth_cb zmk_ble_auth_cb_display = {
+@@ -677,6 +1519,7 @@ static struct bt_conn_auth_cb zmk_ble_auth_cb_display = {
  
  static struct bt_conn_auth_info_cb zmk_ble_auth_info_cb_display = {
      .pairing_complete = auth_pairing_complete,
@@ -1146,7 +1153,19 @@ index 51b172b9..44f29d42 100644
  };
  
  static void zmk_ble_ready(int err) {
-@@ -737,6 +1566,20 @@ static int zmk_ble_init(void) {
+@@ -691,6 +1534,11 @@ static void zmk_ble_ready(int err) {
+
+ static int zmk_ble_complete_startup(void) {
+
++#if IS_ENABLED(CONFIG_TOTEM_ADV_THROTTLE) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
++    /* Start from the restored profile, even before its first connection. */
++    adv_profile_index = active_profile;
++#endif
++
+ #if IS_ENABLED(CONFIG_ZMK_BLE_CLEAR_BONDS_ON_START)
+     LOG_WRN("Clearing all existing BLE bond information from the keyboard");
+
+@@ -737,6 +1585,20 @@ static int zmk_ble_init(void) {
          return err;
      }
  
@@ -1167,7 +1186,7 @@ index 51b172b9..44f29d42 100644
  #if IS_ENABLED(CONFIG_SETTINGS)
      settings_register(&profiles_handler);
      k_work_init_delayable(&ble_save_work, ble_save_profile_work);
-@@ -759,6 +1602,37 @@ static bool zmk_ble_numeric_usage_to_value(const zmk_key_t key, const zmk_key_t
+@@ -759,6 +1621,37 @@ static bool zmk_ble_numeric_usage_to_value(const zmk_key_t key, const zmk_key_t
      return true;
  }
  
@@ -1205,7 +1224,7 @@ index 51b172b9..44f29d42 100644
  static int zmk_ble_handle_key_user(struct zmk_keycode_state_changed *event) {
      zmk_key_t key = event->keycode;
  
-@@ -780,18 +1654,17 @@ static int zmk_ble_handle_key_user(struct zmk_keycode_state_changed *event) {
+@@ -780,18 +1673,17 @@ static int zmk_ble_handle_key_user(struct zmk_keycode_state_changed *event) {
      }
  
      if (key == HID_USAGE_KEY_KEYBOARD_RETURN || key == HID_USAGE_KEY_KEYBOARD_RETURN_ENTER) {
@@ -1233,7 +1252,7 @@ index 51b172b9..44f29d42 100644
          return ZMK_EV_EVENT_HANDLED;
      }
  
-@@ -804,13 +1677,13 @@ static int zmk_ble_handle_key_user(struct zmk_keycode_state_changed *event) {
+@@ -804,13 +1696,13 @@ static int zmk_ble_handle_key_user(struct zmk_keycode_state_changed *event) {
          return ZMK_EV_EVENT_HANDLED;
      }
  
@@ -1253,7 +1272,7 @@ index 51b172b9..44f29d42 100644
  
      return ZMK_EV_EVENT_HANDLED;
  }
-@@ -832,3 +1705,18 @@ ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
+@@ -832,3 +1724,18 @@ ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
  #endif /* IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY) */
  
  SYS_INIT(zmk_ble_init, APPLICATION, CONFIG_ZMK_BLE_INIT_PRIORITY);

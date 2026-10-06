@@ -19,6 +19,9 @@ jobs:
       - name: Checkout config
         uses: actions/checkout@v5
 
+      - name: Test diagnostics and BLE recovery
+        run: python3 -m unittest discover -s tests -v
+
       - name: Require validated BLE policy
         shell: bash
         run: |
@@ -79,6 +82,20 @@ jobs:
           git -C zmk checkout FETCH_HEAD
           git -C zmk rev-parse HEAD
 
+      - name: Require post-settings-load startup hook
+        run: |
+          set -euo pipefail
+          git -C zmk grep -q '^#define ZMK_SETTINGS_LOADED_HOOK_VERSION 1$' -- app/include/zmk/settings.h
+          git -C zmk grep -q 'zmk_settings_loaded();' -- app/src/main.c
+
+      - name: Test pinned firmware regressions
+        run: |
+          python3 zmk/app/tests/studio/raw_tx/test_raw_tx.py -v
+          python3 zmk/app/tests/ble/active_connection/test_active_connection.py -v
+          python3 zmk/app/tests/ble/profile_notifications/test_profile_notifications.py -v
+          python3 zmk/app/tests/settings/startup/test_settings_loaded.py -v
+          python3 zmk/app/tests/battery/persistence/test_persistence.py -v
+
       - name: Require patch symbols in app/src/ble.c
         run: |
           set -euo pipefail
@@ -95,6 +112,7 @@ jobs:
             CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS \
             open_adv_retry_work \
             active_profile_conn_foreach \
+            adv_profile_index \
             totem_prepare_active_fal \
             BT_LE_ADV_OPT_FILTER_CONN \
             zmk_ble_totem_ads_suppressed \
@@ -109,7 +127,7 @@ jobs:
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "::error::config/west.yml revision does not include patches/zmk-ble.patch hooks. Re-apply the patch to rleyvasal/zmk and re-pin the SHA."
+            echo "::error::config/west.yml revision does not include the required BLE hooks. Update rleyvasal/zmk-next and re-pin the SHA."
             exit 1
           fi
           echo "All expected Totem/ZMK patch symbols present."
