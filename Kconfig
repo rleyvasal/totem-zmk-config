@@ -356,10 +356,10 @@ config TOTEM_ACTIVE_ADV_FILTER
 	  BT_LE_ADV_OPT_FILTER_CONN and the filter accept list contains only that
 	  profile's peer. Background bonded hosts cannot complete a connection
 	  (stops multi-host thrash that can rot the selected bond). Open/empty
-	  profiles advertise unfiltered for pairing. Fail-open: any FAL setup or
-	  filtered start failure falls back to unfiltered open advertising.
-	  Earlier 2026-07 attempt: no ads on some builds — re-enabled 2026-07-21
-	  with clearer fallback; set n in totem.conf if ads vanish. Central-only.
+	  profiles advertise unfiltered for pairing. Setup and filtered-start errors
+	  are retried without falling back to unfiltered advertising. The firmware
+	  verifies the stored peer identity against its bond before configuring the
+	  list. Central-only.
 
 config TOTEM_RECONNECT_WATCH
 	bool "Watchdog for stuck profile-switch reconnects"
