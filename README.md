@@ -37,6 +37,14 @@ On the ADJ layer, press the target profile’s `&bt BT_SEL`. Exclusive-host disc
 
 **Host event log:** enabled on the production left image. Recent events are kept in RAM and copied into rotating, CRC-checked settings blocks. Writes are coalesced and rate-limited; profile-change callbacks do not write flash directly. With the Studio USB port connected, run `python tools/read_diag_dump.py /dev/cu.usbmodem101` (requires `pyserial`) to request a `D1` dump. The reader accepts it only when every numbered line and the matching end marker arrive. Replace the port path for your system. The `[` + `X` combo also requests a dump; it does not clear saved logs.
 
+The production RAM history holds 1,024 events (previously 128), preserving more
+of a handoff before a USB dump. This adds 17,920 bytes across the ring and its
+static dump snapshot. The flash journal remains eight 16-event blocks with a
+10-second minimum write interval; its format and existing saved logs are unchanged.
+The extra RAM history is lost on reset unless already copied into the journal;
+RAM and flash histories can overlap and their capacities must not be added as
+unique events. Retention is event-based, not a guaranteed number of minutes.
+
 **Active-host isolation (FAL):** **off.** Field failure 2026-07-21 (Mac→Win OK, return to Mac broken). Exclusive-host eviction is the dual-host policy that survived a week of daily use. Do not enable `CONFIG_TOTEM_ACTIVE_ADV_FILTER` until Mac↔Win↔Mac is proven.
 
 ### Tuning timers (after a week of real use)

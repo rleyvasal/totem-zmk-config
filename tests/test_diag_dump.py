@@ -9,6 +9,14 @@ spec.loader.exec_module(module)
 
 
 class DumpTests(unittest.TestCase):
+    def test_large_dump(self):
+        verifier = module.DumpVerifier()
+        verifier.feed("totem_diag begin id=42 lines=1160 blocks=8 persisted=128 ram=1024 seq=1200")
+        for ordinal in range(1160):
+            verifier.feed(f"totem_diag d=42 n={ordinal} record")
+        verifier.feed("totem_diag end id=42 lines=1160 status=ok")
+        self.assertTrue(verifier.complete)
+
     def test_framing_escapes_control_bytes(self):
         source = bytes([ord("L"), module.SOF, module.ESC, module.EOF])
         self.assertEqual(list(module.Deframer().feed(module.frame(source))), [source])

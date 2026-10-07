@@ -446,7 +446,7 @@ config TOTEM_HOST_EVENT_LOG_SIZE
 	int "Host event ring capacity"
 	depends on TOTEM_HOST_EVENT_LOG
 	default 128
-	range 32 256
+	range 32 1024
 
 config TOTEM_HOST_EVENT_LOG_PERSIST_EVERY
 	int "Persist a journal block after this many new events"

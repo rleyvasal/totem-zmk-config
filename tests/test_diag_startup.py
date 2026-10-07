@@ -77,6 +77,22 @@ static void load_block(unsigned slot, unsigned journal, unsigned first) {
 }
 int main(int argc, char **argv) {
     assert(argc==2);
+    if(strcmp(argv[1],"capacity")==0) {
+        for(unsigned i=0;i<RING_CAP+73;i++) {
+            now=i; totem_host_event_log_record(26,-1,0,0,0,0);
+        }
+        static struct totem_host_event snapshot[RING_CAP]; uint16_t count;
+        ring_get_ordered(snapshot,&count);
+        assert(count==RING_CAP && ring_seq==RING_CAP+73 && schedules==0 && saves==0);
+        for(unsigned i=0;i<RING_CAP;i++) assert(snapshot[i].uptime_ms==i+73);
+        journal_ready=true;
+        totem_host_event_log_persist();
+        assert(saves==1 && written.count==2 && written.first_event_seq==74);
+        assert(written.ev[0].uptime_ms==73 && written.ev[1].uptime_ms==74);
+        totem_host_event_log_persist();
+        assert(saves==1 && wait_ms==10000);
+        return 0;
+    }
     loading=true;
     totem_host_event_log_record(14,-1,-1,1,0,0);
     totem_host_event_log_record(15,-1,-1,2,0,0);
@@ -159,6 +175,8 @@ class DiagnosticStartupTests(unittest.TestCase):
             ("static int hevt_settings_set(", "SETTINGS_STATIC_HANDLER_DEFINE(totem_hevt"),
         ]
         functions = []
+        start = source.index("static void ring_get_ordered(")
+        functions.append(source[start:source.index("static void schedule_persist_coalesced(", start)])
         for start_marker, end_marker in boundaries:
             start = source.index(start_marker)
             functions.append(source[start:source.index(end_marker, start)])
@@ -172,9 +190,19 @@ class DiagnosticStartupTests(unittest.TestCase):
                  "-x", "c", "-", "-o", executable],
                 input=harness, text=True, check=True, timeout=30,
             )
-            for scenario in ("saved", "empty", "wrap"):
+            for scenario in ("saved", "empty", "wrap", "capacity"):
                 with self.subTest(scenario=scenario):
                     subprocess.run([executable, scenario], check=True, timeout=3)
+            config = (root / "config/totem.conf").read_text()
+            capacity = int(next(line.split("=")[1] for line in config.splitlines()
+                                if line.startswith("CONFIG_TOTEM_HOST_EVENT_LOG_SIZE=")))
+            subprocess.run(
+                [os.environ.get("CC", "cc"), "-Wall", "-Wextra", "-Werror",
+                 "-x", "c", "-", "-o", executable],
+                input=harness.replace("#define RING_CAP 4", f"#define RING_CAP {capacity}"),
+                text=True, check=True, timeout=30,
+            )
+            subprocess.run([executable, "capacity"], check=True, timeout=3)
 
 
 if __name__ == "__main__":
