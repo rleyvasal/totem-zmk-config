@@ -49,6 +49,20 @@ enum totem_host_evt {
     /* A coalesced repeat count; reason identifies the underlying event and
      * extra is the number of suppressed repeats. */
     TOTEM_HEVT_REPEAT = 19,
+    TOTEM_HEVT_HID_SUBSCRIBED = 20,
+    /* First send attempt; extra=1 if keyboard notifications are subscribed. */
+    TOTEM_HEVT_HID_FIRST_ATTEMPT = 21,
+    /* extra=0: local send completion; extra=1: send failed, reason=positive errno. */
+    TOTEM_HEVT_HID_TX_RESULT = 22,
+    /* reason=zmk_ble_adv_stage; thrash_win=0 success, 1 POSIX, 2 HCI;
+     * extra=absolute API result. No journal format change. */
+    TOTEM_HEVT_ADV_RESULT = 23,
+    /* First local security API call: reason=requested level/flags,
+     * extra=current level at entry. Not proof an SMP packet was sent. */
+    TOTEM_HEVT_SEC_REQUEST = 24,
+    /* Its return: reason=requested level/flags; w=0 success, 1 POSIX, 2 HCI;
+     * extra=absolute result. Security completion remains event 4/5. */
+    TOTEM_HEVT_SEC_REQUEST_RESULT = 25,
 };
 
 /**

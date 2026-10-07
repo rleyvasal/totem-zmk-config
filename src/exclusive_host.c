@@ -22,7 +22,8 @@
  * paired), macOS bonded at idx=0 -- connect/evict/retry at ~9 Hz until a BT_SEL
  * broke it, which required a keyboard that by then only worked over USB.
  *
- * Profile switch: immediate eviction of known non-active established links.
+ * Intentional profile handoff is owned by the core advertising worker. This
+ * module handles background links without bypassing its anti-thrash guards.
  * Central-only.
  *
  * Logging uses stable totem_ble tokens for dual-host triage (see DEBUGGING-NOTES).
@@ -244,7 +245,7 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     /* Selected computer is not actually linked (empty profile, or bonded but
      * down). Evicting the other PC then bricks the keyboard: BT_SEL needs
      * keystrokes, and ads-dark + Class C leave Mac grey. Prefer a connected
-     * wrong-profile host. BT_SEL still force-evicts. */
+     * wrong-profile host. Intentional BT_SEL handoff is handled in core BLE. */
     if (zmk_ble_active_profile_is_open() || !zmk_ble_active_profile_is_connected()) {
         static int64_t last_skip_log_ms;
         int64_t now = k_uptime_get();
@@ -482,7 +483,7 @@ static int exclusive_host_profile_changed(const zmk_event_t *eh) {
     totem_host_event_log_record(TOTEM_HEVT_PROFILE_CHANGED, (int8_t)active, (int8_t)active,
                                 zmk_ble_active_profile_is_connected() ? 1 : 0, 0,
                                 zmk_ble_active_profile_is_open() ? 1 : 0);
-    exclusive_host_evict_all(switched);
+    k_work_submit(&exclusive_host_evict_work);
     exclusive_host_schedule_retry();
     return ZMK_EV_EVENT_BUBBLE;
 }

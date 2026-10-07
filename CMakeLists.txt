@@ -28,6 +28,10 @@ endif()
 
 if(CONFIG_TOTEM_HOST_EVENT_LOG)
   zephyr_library_sources(src/host_event_log.c)
+  zephyr_library_sources_ifdef(CONFIG_ZMK_SPLIT_ROLE_CENTRAL src/hid_connection_log.c)
+  if(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+    zephyr_ld_options(-Wl,--wrap=bt_conn_set_security)
+  endif()
 endif()
 
 # Watchdog and reset-reason live in one file: the reset reason is read at boot by
