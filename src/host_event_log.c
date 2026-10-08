@@ -29,6 +29,9 @@
 
 #include <totem_host_event_log.h>
 #include <totem_studio_log.h>
+#if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE)
+#include <totem_fault.h>
+#endif
 
 LOG_MODULE_REGISTER(host_event_log, CONFIG_ZMK_LOG_LEVEL);
 
@@ -143,10 +146,10 @@ static void schedule_persist_coalesced(bool urgent) {
     }
 }
 
-void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
-                                 uint8_t thrash_win, uint8_t extra) {
+static void record_event(uint32_t uptime_ms, uint8_t type, int8_t idx, int8_t active,
+                         uint8_t reason, uint8_t thrash_win, uint8_t extra, bool persist) {
     struct totem_host_event e = {
-        .uptime_ms = k_uptime_get_32(),
+        .uptime_ms = uptime_ms,
         .type = type,
         .idx = idx,
         .active = active,
@@ -163,8 +166,10 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
         ring_count++;
     }
     ring_seq++;
-    events_since_persist++;
-    bool need_persist = (events_since_persist >= PERSIST_EVERY);
+    if (persist) {
+        events_since_persist++;
+    }
+    bool need_persist = persist && (events_since_persist >= PERSIST_EVERY);
     if (need_persist) {
         events_since_persist = 0;
     }
@@ -172,7 +177,19 @@ void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_
 
     /* A quiet failure may produce only one record, so also schedule a bounded
      * time-based flush. The work item coalesces storms into one write. */
-    schedule_persist_coalesced(need_persist);
+    if (persist) {
+        schedule_persist_coalesced(need_persist);
+    }
+}
+
+void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
+                                 uint8_t thrash_win, uint8_t extra) {
+    record_event(k_uptime_get_32(), type, idx, active, reason, thrash_win, extra, true);
+}
+
+void totem_host_event_log_record_timing(uint32_t uptime_ms, uint8_t type, int8_t idx,
+                                       int8_t active, uint8_t reason, uint8_t pair, uint8_t extra) {
+    record_event(uptime_ms, type, idx, active, reason, pair, extra, false);
 }
 
 static void persist_work_handler(struct k_work *work) {
@@ -321,6 +338,19 @@ void totem_host_event_log_dump(void) {
     int err;
 
     k_mutex_lock(&dump_mu, K_FOREVER);
+
+#if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE)
+    const struct totem_fault_record *fault = totem_fault_last_record();
+    if (fault->kind != TOTEM_FAULT_NONE) {
+        snprintk(line, sizeof(line),
+                 "totem_fault saved kind=%u reason=%u pc=%08x lr=%08x thread=%08x at=%u",
+                 fault->kind, fault->reason, fault->pc, fault->lr, fault->thread,
+                 fault->uptime_ms);
+        if (dump_send(line) != 0) {
+            goto out;
+        }
+    }
+#endif
 
     k_mutex_lock(&ring_mu, K_FOREVER);
     ring_get_ordered(dump_tmp, &n);

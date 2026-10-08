@@ -63,6 +63,65 @@ enum totem_host_evt {
     /* Its return: reason=requested level/flags; w=0 success, 1 POSIX, 2 HCI;
      * extra=absolute result. Security completion remains event 4/5. */
     TOTEM_HEVT_SEC_REQUEST_RESULT = 25,
+    /* Settings write entry/return: reason=key category (1 journal, 2 profile
+     * selection, 3 profile data, 4 bonds, 5 other); w=pair ID; end extra=errno.
+     * Original timestamps are retained; these records never request a save. */
+    TOTEM_HEVT_FLASH_BEGIN = 26,
+    TOTEM_HEVT_FLASH_END = 27,
+    /* Controller->host disconnect event before host cleanup/callbacks.
+     * idx/active carry the low/high handle bytes, reason=HCI reason,
+     * w=HCI status, extra=selected profile. Not an over-the-air timestamp. */
+    TOTEM_HEVT_HCI_DISC = 28,
+    /* Connection handle mapping: idx=profile, active=selection,
+     * reason/extra=low/high handle bytes. */
+    TOTEM_HEVT_CONN_HANDLE = 29,
+    /* Timing inbox overflow: reason=number of dropped records (up to 255). */
+    TOTEM_HEVT_TIMING_DROPPED = 30,
+    /* Coalesced HID pipeline count: idx=observed profile; reason=stage;
+     * w/extra=low/high cumulative count (16-bit, wraps, resets on boot).
+     * Timestamp is the latest observation, not the summary flush time. */
+    TOTEM_HEVT_HID_COUNT = 31,
+    /* Same profile/stage, w=last positive errno, extra=0. No key identity. */
+    TOTEM_HEVT_HID_ERROR = 32,
+    /* Handoff-only controller diagnostics. i/a always contain handle low/high.
+     * Parameters: r=0 interval (1.25 ms), 1 latency, 2 timeout (10 ms); w/x=value.
+     * Termination: r=0 request (x=reason), 1 API return (w=error class,x=result),
+     * 2 control PDU queued (not necessarily transmitted), 3 link-layer ACK.
+     * 4 confirmed local termination timer expiry (w=0,x=controller reason).
+     * Radio summary: r=0 completed events, 1 no valid CRC/non-aborted packet,
+     * 2 aborted events, 3 skipped events; w/x=saturating 16-bit count.
+     * r=4 last valid RX before request, 5 last valid RX at disconnect:
+     * t=that event's captured time, x=1 known or 0 unknown (t=snapshot time).
+     * r=6 first event without valid RX during handoff, x=aborted flag.
+     * r=7 completed RX packets (trx_cnt sum, not TX/ACK count),
+     * 8 non-aborted events with no RX, 9 non-aborted received-but-invalid events,
+     * 10/11 events reporting MIC pass/fail; all w/x=saturating 16-bit counts.
+     * MIC counts are event summaries, not per-packet; none is not failure. */
+    TOTEM_HEVT_HANDOFF_PARAM = 33,
+    TOTEM_HEVT_HANDOFF_TERM = 34,
+    TOTEM_HEVT_HANDOFF_RADIO = 35,
+    /* Encryption event received at host RX queue/removed for processing.
+     * i/a=handle low/high, r=0 queued, 1 dequeued; 2/3 for key refresh.
+     * w=HCI status, x=encryption enabled byte (255 for key refresh).
+     * Includes split events without doing a connection lookup in the RX path. */
+    TOTEM_HEVT_ENCRYPT_EVENT = 36,
+    /* LE host security processing: i/a=handle low/high, r=0 entry,
+     * 1 after L2CAP encryption callbacks, 2 return; w=HCI status,
+     * x=security level at this boundary. Event 4/5 is application observation. */
+    TOTEM_HEVT_SECURITY_TIMING = 37,
+    /* Security exchange: i/a=handle low/high. r=0 SMP request submission,
+     * 1 submission return (w=error class,x=absolute result),
+     * 2 controller RX / 3 TX queued (w=LL opcode),
+     * 4 key reply entry / 5 return (w=HCI result,x=1 positive/0 negative),
+     * 6/7 host LTK request arrival/dequeue. No key or payload retained. */
+    TOTEM_HEVT_SECURITY_EXCHANGE = 38,
+    /* nRF52840 handoff-only termination TX: i/a=handle low/high.
+     * r=0 radio packet setups, 1 observed hardware TX ENDs, 2 setups without END;
+     * w/x=saturating 16-bit count. r=3 first setup, 4 first END, 5 last END:
+     * t=captured uptime, x=1 known or 0 unknown (snapshot timestamp instead).
+     * Setup is not transmission; END is not proof of reception or ACK.
+     * Repeated ENDs describe retransmissions of this termination procedure. */
+    TOTEM_HEVT_HANDOFF_TX = 39,
 };
 
 /**
@@ -77,6 +136,10 @@ enum totem_host_evt {
 #if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
 void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
                                  uint8_t thrash_win, uint8_t extra);
+
+/** Append a captured timestamp from a worker, without scheduling persistence. */
+void totem_host_event_log_record_timing(uint32_t uptime_ms, uint8_t type, int8_t idx,
+                                       int8_t active, uint8_t reason, uint8_t pair, uint8_t extra);
 
 /** Stream a numbered journal/RAM snapshot (framed Studio CDC or plain printk). */
 void totem_host_event_log_dump(void);

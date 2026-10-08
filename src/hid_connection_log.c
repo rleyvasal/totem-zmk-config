@@ -1,8 +1,10 @@
 #include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/hci.h>
 #include <zephyr/sys/atomic.h>
 #include <zmk/ble.h>
 #include <zmk/hog.h>
 #include <totem_host_event_log.h>
+#include <totem_hid_report_diagnostics.h>
 
 void zmk_ble_advertising_observed(uint8_t stage, int err) {
     int active = zmk_ble_active_profile_index();
@@ -45,6 +47,7 @@ void zmk_hog_subscription_observed(struct bt_conn *conn) {
 }
 
 bool zmk_hog_keyboard_report_attempted(struct bt_conn *conn, bool subscribed) {
+    totem_hid_report_observed(conn, subscribed);
     if (!atomic_test_and_set_bit(first_attempts, bt_conn_index(conn))) {
         totem_diag_log_record(TOTEM_HEVT_HID_FIRST_ATTEMPT,
                              zmk_ble_profile_index(bt_conn_get_dst(conn)),
@@ -69,6 +72,13 @@ void zmk_hog_keyboard_report_result(struct bt_conn *conn, int err) {
 
 static void hid_log_connected(struct bt_conn *conn, uint8_t err) {
     if (!err) {
+        uint16_t handle;
+        if (!bt_hci_get_conn_handle(conn, &handle)) {
+            totem_host_event_log_record_timing(k_uptime_get_32(), TOTEM_HEVT_CONN_HANDLE,
+                                              zmk_ble_profile_index(bt_conn_get_dst(conn)),
+                                              zmk_ble_active_profile_index(), handle & 0xff,
+                                              0, handle >> 8);
+        }
         atomic_clear_bit(first_attempts, bt_conn_index(conn));
         atomic_clear_bit(first_subscriptions, bt_conn_index(conn));
         atomic_clear_bit(first_errors, bt_conn_index(conn));

@@ -139,6 +139,11 @@ int main(int argc, char **argv) {
         assert(written.ev[1].type==(wrap ? 23 : 9));
         assert(persisted_event_seq==ring_seq);
     }
+    int previous_schedules=schedules;
+    unsigned previous_events=events_since_persist;
+    totem_host_event_log_record_timing(42,26,-1,0,1,7,0);
+    assert(schedules==previous_schedules && events_since_persist==previous_events);
+    assert(ring[(ring_head+RING_CAP-1)%RING_CAP].uptime_ms==42);
     assert(!ring_mu.locked && !persist_mu.locked);
     return 0;
 }

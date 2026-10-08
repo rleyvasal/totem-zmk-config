@@ -24,6 +24,9 @@
 
 /* __noinit: not zeroed at startup, so it carries across a soft reset. */
 static __noinit struct totem_fault_record fault_rec;
+static struct totem_fault_record last_fault;
+
+const struct totem_fault_record *totem_fault_last_record(void) { return &last_fault; }
 
 /* Everything from `kind` onward; magic and crc are the envelope. */
 #define FAULT_CRC_OFFSET offsetof(struct totem_fault_record, kind)
@@ -142,6 +145,7 @@ void totem_fault_report_and_clear(void) {
         return;
     }
 
+    last_fault = fault_rec;
     switch (fault_rec.kind) {
     case TOTEM_FAULT_CRASH:
         printk("totem_fault CRASH reason=%u(%s) pc=0x%08x lr=0x%08x thread=%s(0x%08x) "

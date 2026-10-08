@@ -19,7 +19,8 @@ manifest:
       # 455194e8: finish settings loading before journal writes; offload battery saves.
       # 4d476144: link notifications do not restart profile-switch advertising.
       # d54734f2: serialized advertising and tested disconnect-before-advertise handoff.
-      revision: d54734f2c50d7d62ca0158fce01518a34a957cd1
+      # 25907404: retain Zephyr's managed CCC persistence with subscription diagnostics.
+      revision: 25907404f5631ca50d4eb3017f9c5bb6d2a6f3a9
       import: app/west.yml
   self:
     path: config

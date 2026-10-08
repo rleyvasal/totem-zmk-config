@@ -106,9 +106,10 @@ nothing, and only power-cycling both halves recovered it.
 - When the active profile is bonded, advertising uses `BT_LE_ADV_OPT_FILTER_CONN`
   and the accept list contains **only** that profile's peer. Background bonded
   hosts cannot complete a connection (primary multi-host thrash isolation).
-  Open/empty profile → unfiltered ads for pairing. Fail-open: FAL setup/start
-  failure → unfiltered open advertising. **Off** after the 2026-07-21 field
-  fail (Mac return broken). Leave `CONFIG_TOTEM_ACTIVE_ADV_FILTER=n`.
+  Open/empty profile → unfiltered ads for pairing. The current pinned `zmk-next`
+  firmware enables filtering and fails closed if filter setup fails. It waits
+  for the previous host to disconnect before advertising to the selected host.
+  The older patch's fail-open behavior is historical, not the current policy.
 
 **Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
 
@@ -126,6 +127,11 @@ nothing, and only power-cycling both halves recovered it.
 - Uses patch helpers: `zmk_ble_totem_ads_suppressed`,
   `zmk_ble_totem_adv_boost_rearm` (densify via stop+restart),
   `zmk_ble_totem_kick_open_adv`.
+
+The current build pins the full custom `rleyvasal/zmk-next` source revision in
+`config/west.yml`; upstream updates merge into that revision to preserve custom
+features. `zmk-ble.patch` is a historical patch reference, not a complete copy of
+the current firmware. The thin-fork instructions below describe the older workflow.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of

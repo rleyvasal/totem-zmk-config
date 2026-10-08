@@ -54,6 +54,9 @@ void totem_fault_note_task_wdt(int channel_id, const char *label);
 /** printk any stored record, then invalidate it so it is reported exactly once. */
 void totem_fault_report_and_clear(void);
 
+/** Last boot's validated fault, retained for USB diagnosis until the next reset. */
+const struct totem_fault_record *totem_fault_last_record(void);
+
 #ifdef __cplusplus
 }
 #endif

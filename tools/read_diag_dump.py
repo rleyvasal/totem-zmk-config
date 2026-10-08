@@ -118,7 +118,7 @@ def main():
                     continue
                 line = payload[1:].decode("utf-8", "replace")
                 recognized = verifier.feed(line)
-                if recognized:
+                if recognized or line.startswith("totem_fault saved "):
                     print(line)
                 if verifier.complete:
                     print(f"Complete diagnostic dump: {verifier.expected} lines", file=sys.stderr)
