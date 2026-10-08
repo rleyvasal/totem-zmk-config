@@ -214,7 +214,7 @@ int main(void) {
     ll.lll.handle=1; ll.lll.role=1; ctx.proc=PROC_TERMINATE;
     totem_handoff_connected(1); now=300;
     __wrap_bt_conn_disconnect(&bt,0x13);
-    uint8_t reason=0; expected_reason=&reason;
+    static uint8_t reason; expected_reason=&reason;
     const struct {
         uint16_t local, elapsed, after;
         int result;
