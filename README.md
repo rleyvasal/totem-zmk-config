@@ -273,7 +273,7 @@ All `.uf2` files must come from the **same** GitHub Actions run.
 
 ### What each build artifact is for
 
-Every run builds the five images listed in `build.yaml`:
+Every run builds the four images listed in `build.yaml`:
 
 | File | Flash to | Use |
 |---|---|---|
@@ -281,7 +281,6 @@ Every run builds the five images listed in `build.yaml`:
 | `totem_right-xiao_ble__zmk-zmk.uf2` | Right | **Daily driver.** Peripheral half; no Studio (it never talks to the computer). |
 | `settings_reset-xiao_ble__zmk-zmk.uf2` | Both | Wipes stored settings and Bluetooth bonds. Only for re-pairing (below); flash the real firmware afterwards. |
 | `totem_left_logging.uf2` | Left | Debugging only. Streams logs over USB to read disconnect reasons live. Typing goes over USB and logging competes with the radio, so don't judge Bluetooth behaviour on this image. |
-| `totem_left_studio.uf2` | Left | Same features as the daily-driver left image under an explicit name. Interchangeable with it. |
 
 ### Re-pairing (first setup, or after firmware/BLE changes)
 

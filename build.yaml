@@ -19,13 +19,3 @@ include:
     shield: totem_left
     snippet: zmk-usb-logging
     artifact-name: totem_left_logging
-  # Alternate explicitly named Studio artifact. It uses the same Studio and
-  # Runtime Config feature set as production totem_left.
-  #
-  # Local snippet totem-studio-rpc (not upstream studio-rpc-usb-uart). One CDC:
-  # Studio RPC plus framed printk (TOTEM_STUDIO_CONSOLE).
-  - board: xiao_ble//zmk
-    shield: totem_left
-    snippet: totem-studio-rpc
-    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DCONFIG_ZMK_RUNTIME_CONFIG=y
-    artifact-name: totem_left_studio
