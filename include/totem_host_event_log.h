@@ -122,6 +122,20 @@ enum totem_host_evt {
      * Setup is not transmission; END is not proof of reception or ACK.
      * Repeated ENDs describe retransmissions of this termination procedure. */
     TOTEM_HEVT_HANDOFF_TX = 39,
+    /* Boot-only diagnostics. 40/41/43/44 pack a uint32 little-endian in
+     * unsigned i/a/w/x: raw RESETREAS, hwinfo result, boot counter, previous
+     * saved uptime. r on 40 indicates raw capture availability.
+     * 42: r=0 absent, 1 bad magic, 2 bad CRC, 3 valid fault; w=fault kind.
+     * 45: i=previous saved profile, a=previous saved endpoint (-1 unknown).
+     * 46: r=1 retained boot marker survived, 0 absent/corrupt. These markers
+     * cannot distinguish power loss from bootloader RAM/reset-flag clearing. */
+    TOTEM_HEVT_BOOT_RAW = 40,
+    TOTEM_HEVT_BOOT_READ_RESULT = 41,
+    TOTEM_HEVT_BOOT_FAULT_STATUS = 42,
+    TOTEM_HEVT_BOOT_COUNTER = 43,
+    TOTEM_HEVT_BOOT_PREVIOUS_UPTIME = 44,
+    TOTEM_HEVT_BOOT_PREVIOUS_STATE = 45,
+    TOTEM_HEVT_BOOT_RAM_STATUS = 46,
 };
 
 /**

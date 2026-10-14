@@ -45,6 +45,7 @@
 
 #include <totem_fault.h>
 #include <totem_host_event_log.h>
+#include <totem_boot_diagnostics.h>
 
 LOG_MODULE_REGISTER(totem_watchdog, CONFIG_ZMK_LOG_LEVEL);
 
@@ -105,6 +106,15 @@ static uint8_t compress_reset_cause(uint32_t cause) {
 static void totem_capture_reset_reason(void) {
     uint32_t cause = 0;
     int err = hwinfo_get_reset_cause(&cause);
+#if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
+    totem_boot_diagnostics_reset_result(err);
+#endif
+
+    /* Keep the signed API result intact instead of silently losing failures. */
+    uint32_t result = (uint32_t)err;
+    totem_host_event_log_record(TOTEM_HEVT_BOOT_READ_RESULT, (int8_t)result,
+                                (int8_t)(result >> 8), 0,
+                                (uint8_t)(result >> 16), (uint8_t)(result >> 24));
 
     if (err) {
         printk("totem_wdt reset_reason unavailable err=%d\n", err);

@@ -19,6 +19,7 @@
 
 #include <totem_fault.h>
 #include <totem_host_event_log.h>
+#include <totem_boot_diagnostics.h>
 
 #define TOTEM_FAULT_MAGIC 0x544F4654u /* "TOFT" */
 
@@ -137,6 +138,14 @@ static const char *fault_reason_str(uint16_t reason) {
 }
 
 void totem_fault_report_and_clear(void) {
+    uint8_t status = fault_rec.magic == 0 ? 0 :
+                     fault_rec.magic != TOTEM_FAULT_MAGIC ? 1 :
+                     fault_valid(&fault_rec) ? 3 : 2;
+#if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
+    totem_boot_diagnostics_fault_status(status);
+#endif
+    totem_host_event_log_record(TOTEM_HEVT_BOOT_FAULT_STATUS, -1, -1, status,
+                                status == 3 ? fault_rec.kind : 0, 0);
     if (!fault_valid(&fault_rec)) {
         /* Cold boot, or nothing has faulted since the last report. Not an error --
          * say so explicitly, because "no line printed" is otherwise ambiguous with

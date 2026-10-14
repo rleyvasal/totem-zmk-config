@@ -45,6 +45,24 @@ The extra RAM history is lost on reset unless already copied into the journal;
 RAM and flash histories can overlap and their capacities must not be added as
 unique events. Retention is event-based, not a guaranteed number of minutes.
 
+Boot-only diagnostics add `k=40..46` without changing
+the journal format or transport policy. Each USB dump also prints `totem_boot`
+summaries, even when the rolling ring has overwritten the boot events. `raw` is
+the nRF52840 reset register captured at PRE_KERNEL_1 (after the bootloader);
+`read` is the signed hwinfo API result. `ram=1` means the retained boot marker
+survived; it does not prove that all RAM survived. `fault=0/1/2/3` means absent,
+bad magic, bad CRC, or valid crash/watchdog record. Zero raw flags or an absent
+record cannot rule out power loss or bootloader clearing.
+
+The CRC-checked `tboot/count` counter is saved once per boot through the existing
+serialized diagnostic writer, never at early init or in an interrupt. A boot
+that loses power before this write may not increment the saved count. `counter`
+is 0 on first installation, 1 for a valid restored counter, or 2 for an invalid
+value. Previous uptime/profile/endpoint describe only the available saved journal
+tail, not the exact failure instant; profile/endpoint are -1 if not retained.
+Boot evidence joins the usual rate-limited rotating journal. No new per-key or
+per-radio-event logging is enabled.
+
 Timing diagnostics on the left half use the same uptime clock: `k=26/27` mark
 settings-write entry/return (match `r` category and `w` pair ID), `k=28` marks
 controller disconnect reception before host cleanup, and `k=1` is the later

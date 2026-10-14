@@ -23,6 +23,18 @@ HARNESS = r"""
 #define PERSIST_EVERY 2
 #define PERSIST_MIN_INTERVAL_MS 10000
 #define SETTINGS_KEY_PREFIX "th/dlog"
+#define TOTEM_HEVT_PROFILE_CHANGED 10
+#define TOTEM_HEVT_USB 16
+#define TOTEM_HEVT_DISC 1
+#define TOTEM_HEVT_THRASH_WIN 13
+#define TOTEM_HEVT_HID_SUBSCRIBED 20
+#define TOTEM_HEVT_FLASH_END 27
+static uint32_t boot_previous_uptime;
+static int8_t boot_previous_profile, boot_previous_endpoint;
+static void totem_boot_diagnostics_loaded(uint32_t uptime, int8_t profile, int8_t endpoint) {
+    boot_previous_uptime=uptime; boot_previous_profile=profile; boot_previous_endpoint=endpoint;
+}
+static int totem_boot_diagnostics_persist(void) { return 0; }
 #define K_FOREVER -1
 #define K_MSEC(x) (x)
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -77,6 +89,17 @@ static void load_block(unsigned slot, unsigned journal, unsigned first) {
 }
 int main(int argc, char **argv) {
     assert(argc==2);
+    if(strcmp(argv[1],"bootmeta")==0) {
+        load_block(1,40,80);
+        restored_blocks[1].ev[0]=(struct totem_host_event){.uptime_ms=400,.type=27,.active=2};
+        restored_blocks[1].ev[1]=(struct totem_host_event){.uptime_ms=350,.type=16,.reason=255,.extra=2};
+        load_block(3,39,70);
+        restored_blocks[3].ev[1]=(struct totem_host_event){.uptime_ms=1000,.type=29,.active=9};
+        zmk_settings_loaded();
+        assert(boot_previous_uptime==350 && boot_previous_profile==2 && boot_previous_endpoint==2);
+        assert(saves==0);
+        return 0;
+    }
     if(strcmp(argv[1],"capacity")==0) {
         for(unsigned i=0;i<RING_CAP+73;i++) {
             now=i; totem_host_event_log_record(26,-1,0,0,0,0);
@@ -195,7 +218,7 @@ class DiagnosticStartupTests(unittest.TestCase):
                  "-x", "c", "-", "-o", executable],
                 input=harness, text=True, check=True, timeout=30,
             )
-            for scenario in ("saved", "empty", "wrap", "capacity"):
+            for scenario in ("saved", "empty", "wrap", "capacity", "bootmeta"):
                 with self.subTest(scenario=scenario):
                     subprocess.run([executable, scenario], check=True, timeout=3)
             config = (root / "config/totem.conf").read_text()

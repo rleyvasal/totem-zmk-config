@@ -28,6 +28,7 @@
 #include <zmk/settings.h>
 
 #include <totem_host_event_log.h>
+#include <totem_boot_diagnostics.h>
 #include <totem_studio_log.h>
 #if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE)
 #include <totem_fault.h>
@@ -256,7 +257,11 @@ void totem_host_event_log_persist(void) {
 
     /* crc is at the end of the fixed-size struct. Always write the complete
      * block, including unused zeroed event slots and the actual CRC. */
-    int err = settings_save_one(key, &persist_block, sizeof(persist_block));
+    /* Once per boot, through this same serialized/rate-limited writer. */
+    int err = totem_boot_diagnostics_persist();
+    if (!err) {
+        err = settings_save_one(key, &persist_block, sizeof(persist_block));
+    }
     k_mutex_lock(&ring_mu, K_FOREVER);
     last_persist_uptime_ms = k_uptime_get();
     if (err) {
@@ -338,6 +343,16 @@ void totem_host_event_log_dump(void) {
     int err;
 
     k_mutex_lock(&dump_mu, K_FOREVER);
+
+    /* Keep this boot's evidence visible even after the rolling ring wraps. */
+    totem_boot_diagnostics_format(line, sizeof(line), false);
+    if (dump_send(line) != 0) {
+        goto out;
+    }
+    totem_boot_diagnostics_format(line, sizeof(line), true);
+    if (dump_send(line) != 0) {
+        goto out;
+    }
 
 #if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE)
     const struct totem_fault_record *fault = totem_fault_last_record();
@@ -464,14 +479,52 @@ static int hevt_settings_set(const char *name, size_t len, settings_read_cb read
 }
 
 void zmk_settings_loaded(void) {
+    uint32_t previous_uptime = 0;
+    uint32_t previous_seq = 0;
+    uint32_t profile_seq = 0;
+    uint32_t endpoint_seq = 0;
+    int8_t previous_profile = -1;
+    int8_t previous_endpoint = -1;
     k_mutex_lock(&ring_mu, K_FOREVER);
     if (!journal_ready) {
+        /* Only inspect restored, CRC-validated blocks, never this boot's RAM. */
+        for (uint8_t slot = 0; slot < JOURNAL_SLOTS; slot++) {
+            if (!restored_valid[slot]) {
+                continue;
+            }
+            const struct totem_diag_block *block = &restored_blocks[slot];
+            for (uint8_t n = 0; n < block->count; n++) {
+                const struct totem_host_event *event = &block->ev[n];
+                uint32_t seq = block->first_event_seq + n;
+                /* Timing summaries can be appended with older timestamps. */
+                if (seq > previous_seq) {
+                    previous_uptime = event->uptime_ms;
+                    previous_seq = seq;
+                }
+                /* These events carry a profile in a; controller events carry
+                 * handle bytes instead and must not be treated as selection. */
+                bool has_profile = (event->type >= TOTEM_HEVT_DISC &&
+                                    event->type <= TOTEM_HEVT_THRASH_WIN) ||
+                                   (event->type >= TOTEM_HEVT_HID_SUBSCRIBED &&
+                                    event->type <= TOTEM_HEVT_FLASH_END);
+                if (has_profile && event->active >= 0 && seq > profile_seq) {
+                    previous_profile = event->active;
+                    profile_seq = seq;
+                }
+                if (event->type == TOTEM_HEVT_USB && event->reason == 255 &&
+                    seq > endpoint_seq) {
+                    previous_endpoint = (int8_t)event->extra;
+                    endpoint_seq = seq;
+                }
+            }
+        }
         /* main() calls this after all settings callbacks and their lock release. */
         ring_seq = persisted_event_seq + ring_count;
         journal_ready = true;
     }
     bool pending = ring_seq > persisted_event_seq;
     k_mutex_unlock(&ring_mu);
+    totem_boot_diagnostics_loaded(previous_uptime, previous_profile, previous_endpoint);
     if (pending) {
         schedule_persist_coalesced(true);
     }
