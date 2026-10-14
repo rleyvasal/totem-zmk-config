@@ -173,8 +173,15 @@ jobs:
 
           If anything regresses, close this PR. The keyboard stays on the current pin.
           EOF
-          gh pr create --base "$BASE" --head "$br" \
-            --title "Bump Totem firmware to ZMK Next ${TAG}" --body-file /tmp/body.md
+          title="Bump Totem firmware to ZMK Next ${TAG}"
+          if ! gh pr create --base "$BASE" --head "$br" --title "$title" --body-file /tmp/body.md; then
+            # Opening PRs needs "Allow GitHub Actions to create and approve pull
+            # requests" in the repo's Actions settings. Without it, file an issue
+            # that links straight to the PR form for the pushed branch.
+            compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${BASE}...${br}?expand=1"
+            { echo "New Totem firmware is ready on branch \`${br}\`. [Open the PR](${compare}) to review and merge it."; echo; cat /tmp/body.md; } > /tmp/issue.md
+            gh issue create --title "$title" --body-file /tmp/issue.md
+          fi
 
           # PRs opened with GITHUB_TOKEN don't trigger workflows, so start the
           # firmware build for the branch explicitly.
