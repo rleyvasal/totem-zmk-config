@@ -22,5 +22,33 @@ manifest:
       # 25907404: retain Zephyr's managed CCC persistence with subscription diagnostics.
       revision: 25907404f5631ca50d4eb3017f9c5bb6d2a6f3a9
       import: app/west.yml
+    # Overrides the zephyr project imported from zmk's app/west.yml: projects in
+    # this top-level manifest take precedence over imported ones of the same name.
+    # Branch v4.1.0+zmk-fixes+prepare-pipeline = zmkfirmware v4.1.0+zmk-fixes
+    # (10ba6d0c) + patches/zephyr-prepare-pipeline.patch (upstream d4d923938c1a).
+    # Keep the name-blocklist in sync with zmk's app/west.yml.
+    - name: zephyr
+      remote: fork
+      revision: af2b801f362d003974aba1dd332366ecf1a368b0
+      clone-depth: 1
+      import:
+        name-blocklist:
+          - ci-tools
+          - hal_altera
+          - hal_cypress
+          - hal_infineon
+          - hal_microchip
+          - hal_nxp
+          - hal_openisa
+          - hal_xtensa
+          - hal_st
+          - hal_ti
+          - loramac-node
+          - mcuboot
+          - mcumgr
+          - net-tools
+          - openthread
+          - edtt
+          - trusted-firmware-m
   self:
     path: config

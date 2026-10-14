@@ -198,9 +198,27 @@ Backport of upstream Zephyr `d4d923938c1a` to `subsys/bluetooth/controller/ll_sw
 pipeline for overlapping radio events, the suspected cause of the ~24 h controller
 crash. The left half flashed on 2026-10-14 was built with it applied by hand.
 
-**It is not applied by CI yet.** `config/west.yml` still pulls unpatched
-`zmkfirmware/zephyr`, so a CI-built UF2 does not contain this fix. Until a Zephyr
-fork carrying the patch is pinned in `config/west.yml`, build locally:
+**CI applies it.** `config/west.yml` overrides the `zephyr` project imported from
+ZMK's `app/west.yml` (top-level projects take precedence over imported ones) and
+pins `rleyvasal/zephyr` branch `v4.1.0+zmk-fixes+prepare-pipeline` by full SHA
+(`af2b801f` = `zmkfirmware/zephyr` `v4.1.0+zmk-fixes` at `10ba6d0c` + this patch).
+`10ba6d0c` is two controller commits newer than the tested `9df4b12b5`
+(`lll_conn.c`, `ull_conn.c`); the patched `ull.c` is byte-identical to the one in
+the flashed image. The override repeats ZMK's zephyr `name-blocklist`; keep it in
+sync when ZMK changes it.
+
+When ZMK moves its Zephyr branch, rebuild the fork branch and re-pin:
+
+```sh
+git -C ~/zephyr fetch https://github.com/zmkfirmware/zephyr.git v4.1.0+zmk-fixes
+git -C ~/zephyr checkout -B v4.1.0+zmk-fixes+prepare-pipeline FETCH_HEAD
+git -C ~/zephyr apply ~/totem-zmk-config/patches/zephyr-prepare-pipeline.patch
+git -C ~/zephyr commit -am "Bluetooth: Controller: Fix prepare pipeline for overlapping events"
+git -C ~/zephyr push -f https://github.com/rleyvasal/zephyr.git v4.1.0+zmk-fixes+prepare-pipeline
+```
+
+Then set the `zephyr` `revision:` in `config/west.yml` to the new full SHA. For a
+local workspace that still uses unpatched Zephyr, apply it by hand:
 
 ```sh
 git -C <workspace>/zephyr apply ~/totem-zmk-config/patches/zephyr-prepare-pipeline.patch

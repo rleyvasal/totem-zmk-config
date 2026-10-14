@@ -1,7 +1,7 @@
 # Upstream: zephyrproject-rtos/zephyr d4d923938c1aa775ba2199a556a1a4cdd97891f2
 # Fix prepare pipeline for overlapping events; no queue-size or radio-IRQ changes.
 # Tested base: 9df4b12b5af3438a8b9d7a33780dc3b3b2f516c1 (ZMK Zephyr 4.1).
-# Experimental: not automatically applied by the current west manifest or CI.
+# Applied in CI via the rleyvasal/zephyr pin in config/west.yml (see README.md).
 diff --git a/subsys/bluetooth/controller/ll_sw/ull.c b/subsys/bluetooth/controller/ll_sw/ull.c
 --- a/subsys/bluetooth/controller/ll_sw/ull.c
 +++ b/subsys/bluetooth/controller/ll_sw/ull.c

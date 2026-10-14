@@ -72,6 +72,24 @@ jobs:
           echo "repository=rleyvasal/$REPO_PATH" >> "$GITHUB_OUTPUT"
           echo "Tracking rleyvasal/$REPO_PATH revision: $REV"
 
+      - name: Require patched Zephyr prepare pipeline
+        run: |
+          set -euo pipefail
+          # patches/zephyr-prepare-pipeline.patch must be in the pinned zephyr override.
+          ZREV=$(awk '/name: zephyr/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
+          if [ -z "$ZREV" ]; then
+            echo "::error::config/west.yml has no zephyr override; CI would build unpatched Zephyr"
+            exit 1
+          fi
+          curl -fsSL "https://raw.githubusercontent.com/rleyvasal/zephyr/${ZREV}/subsys/bluetooth/controller/ll_sw/ull.c" -o ull.c
+          for sym in param_normal_head_ticks param_normal_next_ticks; do
+            if ! grep -q "$sym" ull.c; then
+              echo "::error::Missing '${sym}' in rleyvasal/zephyr@${ZREV} ull.c — prepare-pipeline patch not applied"
+              exit 1
+            fi
+            echo "OK  ${sym} in rleyvasal/zephyr@${ZREV}"
+          done
+
       - name: Fetch ZMK at pinned revision
         run: |
           set -euo pipefail
