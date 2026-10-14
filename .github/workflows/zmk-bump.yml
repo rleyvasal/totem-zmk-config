@@ -1,195 +1,202 @@
 name: Bump ZMK
 
-# Merge upstream into the pinned custom fork, retaining all custom features.
-# ZMK_FORK_TOKEN needs Contents:write on rleyvasal/zmk-next.
+# Weekly Totem firmware update. The stack is:
+#   zmkfirmware/zmk -> rleyvasal/zmk-next (synced and released weekly)
+#     -> rleyvasal/zmk-totem branch `totem` (ZMK Next + Totem patches)
+#       -> this config (west.yml pins an exact zmk-totem commit)
+#
+# Each run merges the latest ZMK Next release into zmk-totem's `totem` branch,
+# runs the Totem firmware tests, pushes the branch, and opens a PR here that
+# moves the west.yml pin. The PR's build produces the firmware to flash; merge
+# it only after a hardware check. Nothing is ever merged automatically.
+#
+# Setup: ZMK_FORK_TOKEN is a fine-grained token with Contents write on
+# rleyvasal/zmk-totem (plus Workflows write, so merges that update workflow
+# files can be pushed).
+
 on:
   schedule:
-    - cron: '0 6 * * 1'
+    # ZMK Next's own sync runs at 06:17 UTC on Mondays.
+    - cron: "0 9 * * 1"
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "Upstream version to merge into the custom firmware"
-        type: choice
-        required: true
-        default: release
-        options: [release, main, ref]
-      ref:
-        description: "Upstream tag, branch, or SHA when mode=ref"
-        required: false
-        default: ""
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write
 
 concurrency:
-  group: zmk-bump-${{ github.ref }}
+  group: zmk-bump
   cancel-in-progress: false
 
 env:
-  UPSTREAM: https://github.com/zmkfirmware/zmk.git
-  UPSTREAM_REPO: zmkfirmware/zmk
-  FORK_REPO: rleyvasal/zmk-next
+  NEXT_REPO: rleyvasal/zmk-next
+  FORK_REPO: rleyvasal/zmk-totem
+  FORK_BRANCH: totem
+  # Branch that carries the ZMK Next work until it merges into main. Once
+  # main's west.yml points at zmk-totem, main is used instead.
+  WORK_BRANCH: persistent-diagnostic-log
 
 jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout config
-        uses: actions/checkout@v5
-
-      - name: Resolve upstream target
-        id: ref
+      - name: Pick the config branch
+        id: base
         env:
           GH_TOKEN: ${{ github.token }}
-          MODE: ${{ inputs.mode || 'release' }}
-          INPUT_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
-          RELEASE_TAG=""
-          RELEASE_URL=""
-          case "$MODE" in
-            release)
-              meta=$(gh api "repos/${UPSTREAM_REPO}/releases/latest")
-              RELEASE_TAG=$(jq -r .tag_name <<< "$meta")
-              RELEASE_URL=$(jq -r .html_url <<< "$meta")
-              LABEL="$RELEASE_TAG"
-              ;;
-            main) LABEL=main ;;
-            ref)
-              if [ -z "$INPUT_REF" ]; then
-                echo "::error::mode=ref requires an upstream ref"
-                exit 1
-              fi
-              LABEL="$INPUT_REF"
-              ;;
-            *) exit 1 ;;
-          esac
-          SHA=$(gh api "repos/${UPSTREAM_REPO}/commits/${LABEL}" --jq .sha)
-          {
-            echo "mode=$MODE"
-            echo "sha=$SHA"
-            echo "short=${SHA:0:7}"
-            echo "label=$LABEL"
-            echo "release_tag=$RELEASE_TAG"
-            echo "release_url=$RELEASE_URL"
-          } >> "$GITHUB_OUTPUT"
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/config/west.yml?ref=main" --jq .content \
+              | base64 -d | grep -q 'repo-path: zmk-totem'; then
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=$WORK_BRANCH" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Fetch pinned custom firmware and check ancestry
-        id: plan
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ steps.ref.outputs.sha }}
-        run: |
-          set -euo pipefail
-          CURRENT=$(awk '/name: zmk/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
-          REPO_PATH=$(awk '/name: zmk/,/revision:/ { if ($1 == "repo-path:") { print $2; exit } }' config/west.yml)
-          if [ "$FORK_REPO" != "rleyvasal/$REPO_PATH" ] || [ -z "$CURRENT" ]; then
-            echo "::error::Update repository must match the firmware repository in west.yml"
-            exit 1
-          fi
-          git clone --filter=blob:none --no-checkout "https://github.com/${FORK_REPO}.git" zmk
-          git -C zmk fetch origin "$CURRENT"
-          CURRENT=$(git -C zmk rev-parse FETCH_HEAD)
-          git -C zmk fetch "$UPSTREAM" "$SHA"
-          if git -C zmk merge-base --is-ancestor "$SHA" "$CURRENT"; then
-            echo "Pinned firmware already contains upstream ${SHA:0:7}; no update needed."
-            echo "status=noop" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          BR="zmk-bump-${CURRENT:0:7}-${SHA:0:7}"
-          if [ -n "$(gh pr list --head "$BR" --state open --json url --jq '.[0].url // empty')" ]; then
-            echo "An update PR already exists for $BR."
-            echo "status=noop" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git -C zmk checkout -b "$BR" "$CURRENT"
-          {
-            echo "status=needed"
-            echo "branch=$BR"
-          } >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.base.outputs.branch }}
 
-      - name: Merge upstream and test custom firmware
+      - name: Merge the latest ZMK Next release into the Totem fork
         id: merge
-        if: steps.plan.outputs.status == 'needed'
         env:
-          SHA: ${{ steps.ref.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          tag=$(gh api "repos/${NEXT_REPO}/releases/latest" --jq .tag_name)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          git clone --filter=blob:none --branch "$FORK_BRANCH" "https://github.com/${FORK_REPO}.git" zmk
           git -C zmk config user.name zmk-bump-bot
           git -C zmk config user.email actions@users.noreply.github.com
-          if ! bash tools/merge_zmk_update.sh zmk "$SHA"; then
-            echo "status=conflict" >> "$GITHUB_OUTPUT"
-            exit 0
+          git -C zmk fetch --filter=blob:none "https://github.com/${NEXT_REPO}.git" "refs/tags/${tag}:refs/tags/${tag}"
+
+          if git -C zmk merge-base --is-ancestor "$tag" HEAD; then
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          elif git -C zmk merge --no-edit -m "Merge ZMK Next ${tag} into ${FORK_BRANCH}" "$tag"; then
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          else
+            # ZMK Next's README and docs always win; anything else needs a person.
+            git -C zmk diff --name-only --diff-filter=U | grep -E '^(README\.md|docs/)' \
+              | xargs -r git -C zmk checkout --theirs --
+            git -C zmk diff --name-only --diff-filter=U | grep -E '^(README\.md|docs/)' \
+              | xargs -r git -C zmk add --
+            if [ -n "$(git -C zmk diff --name-only --diff-filter=U)" ]; then
+              git -C zmk diff --name-only --diff-filter=U | tee conflicts.txt
+              git -C zmk merge --abort
+              echo "status=conflict" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git -C zmk commit --no-edit
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
+          echo "sha=$(git -C zmk rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "status=merged" >> "$GITHUB_OUTPUT"
+
+      - name: Test the Totem firmware
+        if: steps.merge.outputs.status == 'merged'
+        run: |
+          set -euo pipefail
           python3 zmk/app/tests/studio/raw_tx/test_raw_tx.py -v
           python3 zmk/app/tests/ble/active_connection/test_active_connection.py -v
           python3 zmk/app/tests/ble/profile_notifications/test_profile_notifications.py -v
           python3 zmk/app/tests/settings/startup/test_settings_loaded.py -v
           python3 zmk/app/tests/battery/persistence/test_persistence.py -v
-          git -C zmk commit -m "Merge upstream ZMK ${SHA:0:7} into custom firmware"
-          echo "status=clean" >> "$GITHUB_OUTPUT"
 
-      - name: Publish firmware update branch
-        if: steps.merge.outputs.status == 'clean'
+      - name: Push the Totem fork
+        if: steps.merge.outputs.status == 'merged' && steps.merge.outputs.pushed == 'true'
         env:
           FORK_TOKEN: ${{ secrets.ZMK_FORK_TOKEN }}
-          BR: ${{ steps.plan.outputs.branch }}
         run: |
           set -euo pipefail
           if [ -z "${FORK_TOKEN:-}" ]; then
-            echo "::error::ZMK_FORK_TOKEN needs Contents:write on ${FORK_REPO}"
+            echo "::error::ZMK_FORK_TOKEN needs Contents write on ${FORK_REPO}"
             exit 1
           fi
-          git -C zmk push "https://x-access-token:${FORK_TOKEN}@github.com/${FORK_REPO}.git" "$BR"
+          git -C zmk push "https://x-access-token:${FORK_TOKEN}@github.com/${FORK_REPO}.git" "HEAD:${FORK_BRANCH}"
 
-      - name: Open configuration update PR
-        if: steps.merge.outputs.status == 'clean'
+      - name: Open the config PR
+        if: steps.merge.outputs.status == 'merged'
         env:
           GH_TOKEN: ${{ github.token }}
-          BR: ${{ steps.plan.outputs.branch }}
-          BASE: ${{ github.ref_name }}
-          MODE: ${{ steps.ref.outputs.mode }}
-          SHA: ${{ steps.ref.outputs.sha }}
-          SHORT: ${{ steps.ref.outputs.short }}
-          LABEL: ${{ steps.ref.outputs.label }}
-          RELEASE_TAG: ${{ steps.ref.outputs.release_tag }}
-          RELEASE_URL: ${{ steps.ref.outputs.release_url }}
+          BASE: ${{ steps.base.outputs.branch }}
+          SHA: ${{ steps.merge.outputs.sha }}
+          TAG: ${{ steps.merge.outputs.tag }}
         run: |
           set -euo pipefail
-          FORK_TIP=$(git -C zmk rev-parse HEAD)
+          current=$(awk '/name: zmk$/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
+          repo_path=$(awk '/name: zmk$/,/revision:/ { if ($1 == "repo-path:") { print $2; exit } }' config/west.yml)
+          if [ "$current" = "$SHA" ] && [ "$repo_path" = "zmk-totem" ]; then
+            echo "config/west.yml already pins ${SHA:0:7}; nothing to do."
+            exit 0
+          fi
+          br="zmk-bump-${TAG}-${SHA:0:7}"
+          if [ -n "$(gh pr list --head "$br" --state open --json url --jq '.[0].url // empty')" ]; then
+            echo "A PR for $br is already open."
+            exit 0
+          fi
+
+          python3 - "$SHA" <<'PY'
+          import re, sys
+          path = "config/west.yml"
+          text = open(path).read()
+          block = re.search(r"^    - name: zmk\n(?:      .*\n|\s*#.*\n)*", text, re.M)
+          new = re.sub(r"^      revision: .*$", f"      revision: {sys.argv[1]}", block.group(0), flags=re.M)
+          if re.search(r"^      repo-path: ", new, re.M):
+              new = re.sub(r"^      repo-path: .*$", "      repo-path: zmk-totem", new, flags=re.M)
+          else:
+              new = new.replace("      revision:", "      repo-path: zmk-totem\n      revision:", 1)
+          open(path, "w").write(text.replace(block.group(0), new))
+          PY
+
           git config user.name zmk-bump-bot
           git config user.email actions@users.noreply.github.com
-          git checkout -b "$BR"
-          sed -i '/name: zmk/,/revision:/ s|revision: .*|revision: '"$FORK_TIP"'|' config/west.yml
-          git add config/west.yml
-          git commit -m "Bump custom ZMK firmware to ${LABEL} (${FORK_TIP:0:7})"
-          git push origin "$BR"
-          export FORK_TIP
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          text = Path('.github/zmk-bump-pr-body.md').read_text()
-          for name in ('MODE', 'SHA', 'SHORT', 'LABEL', 'FORK_TIP', 'RELEASE_TAG', 'RELEASE_URL'):
-              text = text.replace(f'__{name}__', os.environ[name])
-          text = text.replace('__FORKBRANCH__', os.environ['BR'])
-          Path('/tmp/zmk-bump-pr-body.md').write_text(text)
-          PY
-          gh pr create --base "$BASE" --head "$BR" \
-            --title "Bump custom ZMK to ${LABEL} (${SHORT})" \
-            --body-file /tmp/zmk-bump-pr-body.md
+          git checkout -b "$br"
+          git commit -am "Bump Totem firmware to ZMK Next ${TAG} (${SHA:0:7})"
+          git push origin "$br"
 
-      - name: Report upstream merge conflict
+          cat > /tmp/body.md <<EOF
+          Moves \`config/west.yml\` to [${FORK_REPO}@${SHA:0:7}](https://github.com/${FORK_REPO}/commit/${SHA}): ZMK Next [${TAG}](https://github.com/${NEXT_REPO}/releases/tag/${TAG}) with the Totem patches merged in. The Totem firmware tests passed.
+
+          The firmware build for this branch is started automatically; download its artifacts from the Actions tab.
+
+          **Merge only after flashing the left half and checking:**
+
+          - [ ] Typing on both halves, including homerow mods and combos
+          - [ ] Profile switching with \`&bt BT_SEL\`
+          - [ ] Only the active host stays connected
+          - [ ] The selected host reconnects cleanly; USB typing stays stable
+          - [ ] Retained logs can be read and live logs don't stall typing
+          - [ ] Idle battery drain stays around 0.5 to 0.9 %/hr
+
+          If anything regresses, close this PR. The keyboard stays on the current pin.
+          EOF
+          gh pr create --base "$BASE" --head "$br" \
+            --title "Bump Totem firmware to ZMK Next ${TAG}" --body-file /tmp/body.md
+
+          # PRs opened with GITHUB_TOKEN don't trigger workflows, so start the
+          # firmware build for the branch explicitly.
+          gh workflow run build.yml --ref "$br"
+          gh workflow run verify-zmk-patch.yml --ref "$br" || true
+
+      - name: Report a merge conflict
         if: steps.merge.outputs.status == 'conflict'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHORT: ${{ steps.ref.outputs.short }}
+          TAG: ${{ steps.merge.outputs.tag }}
         run: |
           set -euo pipefail
-          TITLE="ZMK update ${SHORT}: custom firmware needs a merge"
-          if [ -n "$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')" ]; then
+          title="Totem firmware: ZMK Next ${TAG} needs a manual merge"
+          if [ -n "$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')" ]; then
             exit 0
           fi
-          gh issue create --title "$TITLE" \
-            --body "Merging upstream ${SHORT} into the pinned custom firmware conflicted. Resolve the merge in ${FORK_REPO}, retaining the Studio, runtime configuration, diagnostic, battery, and BLE changes. No new firmware revision was pinned."
+          {
+            echo "Merging ZMK Next ${TAG} into ${FORK_REPO}@${FORK_BRANCH} conflicts in:"
+            echo
+            sed 's/^/- /' conflicts.txt
+            echo
+            echo "Resolve the merge in ${FORK_REPO}, keeping the Totem BLE, diagnostics and battery changes, then re-run this workflow. The keyboard stays on its current pin."
+          } > /tmp/issue.md
+          gh issue create --title "$title" --body-file /tmp/issue.md
