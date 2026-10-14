@@ -343,20 +343,27 @@ static void commit_line(void) {
     (void)k_work_schedule(&totem_studio_log_work, K_NO_WAIT);
 }
 
+/* printk runs from any thread and from ISRs (including the fatal handler), so the
+ * shared line buffer and history ring must be updated atomically: an unguarded
+ * check-then-increment of assembling_len can overrun `assembling` by a byte. The
+ * critical section never blocks (K_NO_WAIT queue put, work submit). */
+static struct k_spinlock printk_lock;
+
 static int totem_printk_char(int c) {
     if (c == '\r') {
         return c;
     }
+    k_spinlock_key_t key = k_spin_lock(&printk_lock);
+
     if (c == '\n') {
         commit_line();
-        return c;
-    }
-    if (assembling_len < LINE_MAX - 1) {
-        assembling[assembling_len++] = (char)c;
     } else {
-        commit_line();
+        if (assembling_len >= LINE_MAX - 1) {
+            commit_line();
+        }
         assembling[assembling_len++] = (char)c;
     }
+    k_spin_unlock(&printk_lock, key);
     return c;
 }
 

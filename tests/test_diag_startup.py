@@ -34,7 +34,8 @@ static int8_t boot_previous_profile, boot_previous_endpoint;
 static void totem_boot_diagnostics_loaded(uint32_t uptime, int8_t profile, int8_t endpoint) {
     boot_previous_uptime=uptime; boot_previous_profile=profile; boot_previous_endpoint=endpoint;
 }
-static int totem_boot_diagnostics_persist(void) { return 0; }
+static int counter_err, counter_calls;
+static int totem_boot_diagnostics_persist(void) { counter_calls++; return counter_err; }
 #define K_FOREVER -1
 #define K_MSEC(x) (x)
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -98,6 +99,14 @@ int main(int argc, char **argv) {
         zmk_settings_loaded();
         assert(boot_previous_uptime==350 && boot_previous_profile==2 && boot_previous_endpoint==2);
         assert(saves==0);
+        return 0;
+    }
+    if(strcmp(argv[1],"counterfail")==0) {
+        /* A failed boot-counter save must not block the journal block. */
+        journal_ready=true; counter_err=-5;
+        totem_host_event_log_record(9,-1,-1,0,0,0);
+        totem_host_event_log_persist();
+        assert(counter_calls==1 && saves==1 && persisted_event_seq==1);
         return 0;
     }
     if(strcmp(argv[1],"capacity")==0) {
@@ -218,7 +227,7 @@ class DiagnosticStartupTests(unittest.TestCase):
                  "-x", "c", "-", "-o", executable],
                 input=harness, text=True, check=True, timeout=30,
             )
-            for scenario in ("saved", "empty", "wrap", "capacity", "bootmeta"):
+            for scenario in ("saved", "empty", "wrap", "capacity", "bootmeta", "counterfail"):
                 with self.subTest(scenario=scenario):
                     subprocess.run([executable, scenario], check=True, timeout=3)
             config = (root / "config/totem.conf").read_text()

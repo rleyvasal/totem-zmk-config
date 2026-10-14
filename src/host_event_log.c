@@ -257,11 +257,14 @@ void totem_host_event_log_persist(void) {
 
     /* crc is at the end of the fixed-size struct. Always write the complete
      * block, including unused zeroed event slots and the actual CRC. */
-    /* Once per boot, through this same serialized/rate-limited writer. */
-    int err = totem_boot_diagnostics_persist();
-    if (!err) {
-        err = settings_save_one(key, &persist_block, sizeof(persist_block));
+    /* Once per boot, through this same serialized/rate-limited writer. A failed
+     * counter save stays pending for the next write; it must never block the
+     * journal block, which is the evidence that matters. */
+    int counter_err = totem_boot_diagnostics_persist();
+    if (counter_err) {
+        LOG_WRN("totem_boot counter save failed err=%d", counter_err);
     }
+    int err = settings_save_one(key, &persist_block, sizeof(persist_block));
     k_mutex_lock(&ring_mu, K_FOREVER);
     last_persist_uptime_ms = k_uptime_get();
     if (err) {

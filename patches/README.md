@@ -190,3 +190,18 @@ If you fixed hunks by hand, regenerate the patch:
 `git -C ~/zmk diff <new-upstream-sha> -- app/src/ble.c > patches/zmk-ble.patch`.
 Then set `config/west.yml` `revision:` to **`$TIP` (full SHA)**, not only the
 branch name, and push the config repo.
+
+# Zephyr patch — controller prepare pipeline (`zephyr-prepare-pipeline.patch`)
+
+Backport of upstream Zephyr `d4d923938c1a` to `subsys/bluetooth/controller/ll_sw/ull.c`
+(tested on ZMK's Zephyr `9df4b12b5`, `v4.1.0+zmk-fixes`). It fixes the prepare
+pipeline for overlapping radio events, the suspected cause of the ~24 h controller
+crash. The left half flashed on 2026-10-14 was built with it applied by hand.
+
+**It is not applied by CI yet.** `config/west.yml` still pulls unpatched
+`zmkfirmware/zephyr`, so a CI-built UF2 does not contain this fix. Until a Zephyr
+fork carrying the patch is pinned in `config/west.yml`, build locally:
+
+```sh
+git -C <workspace>/zephyr apply ~/totem-zmk-config/patches/zephyr-prepare-pipeline.patch
+```

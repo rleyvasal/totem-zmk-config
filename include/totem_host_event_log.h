@@ -136,6 +136,11 @@ enum totem_host_evt {
     TOTEM_HEVT_BOOT_PREVIOUS_UPTIME = 44,
     TOTEM_HEVT_BOOT_PREVIOUS_STATE = 45,
     TOTEM_HEVT_BOOT_RAM_STATUS = 46,
+    /* Low-rate liveness + power sample, so an unexplained reset is bounded in time
+     * and a sagging battery is visible. i=selected profile, a=right SoC (-1
+     * unknown), r=left SoC, w/x=low/high bytes of a uint16: bits 0..14 battery mV,
+     * bit 15 USB powered. One per CONFIG_TOTEM_DIAG_HEARTBEAT_MIN; never per key. */
+    TOTEM_HEVT_HEARTBEAT = 47,
 };
 
 /**

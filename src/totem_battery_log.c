@@ -23,6 +23,8 @@
  * printk, not LOG_*: this must work on the production image where CONFIG_LOG is off.
  */
 
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/util.h>
@@ -35,6 +37,10 @@
 #endif
 
 #include <totem_studio_log.h>
+#if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
+#include <zmk/ble.h>
+#include <totem_host_event_log.h>
+#endif
 
 __attribute__((weak)) int totem_studio_send_battery(const char *line) {
     ARG_UNUSED(line);
@@ -73,6 +79,26 @@ static bool batt_event_should_print(void) {
     last_printed_local = local;
     last_printed_periph = peripheral_soc;
     return true;
+}
+
+/* ZMK only fills zmk_battery_millivolts() in LITHIUM_VOLTAGE fetch mode; this
+ * board uses STATE_OF_CHARGE mode, where it stays 0. The voltage-divider driver
+ * still keeps the millivolts of its last fetch, so read that (no ADC access; ZMK's
+ * own periodic fetch keeps it fresh). */
+static uint16_t battery_mv(void) {
+    uint16_t mv = zmk_battery_millivolts();
+
+#if DT_HAS_CHOSEN(zmk_battery)
+    if (mv == 0) {
+        const struct device *dev = DEVICE_DT_GET(DT_CHOSEN(zmk_battery));
+        struct sensor_value v;
+
+        if (device_is_ready(dev) && sensor_channel_get(dev, SENSOR_CHAN_GAUGE_VOLTAGE, &v) == 0) {
+            mv = (uint16_t)(v.val1 * 1000 + v.val2 / 1000);
+        }
+    }
+#endif
+    return mv;
 }
 
 static bool left_on_usb(void) {
@@ -119,7 +145,7 @@ static void totem_batt_push_studio(void) {
 static void totem_batt_print(const char *why, bool with_mv) {
     uint32_t up_s = k_uptime_get_32() / 1000;
     char levels[40];
-    uint16_t mv = zmk_battery_millivolts();
+    uint16_t mv = battery_mv();
 
     format_levels(levels, sizeof(levels));
     if (with_mv && mv > 0) {
@@ -169,6 +195,33 @@ static void totem_batt_tick_handler(struct k_work *work) {
 
 static K_WORK_DELAYABLE_DEFINE(totem_batt_tick, totem_batt_tick_handler);
 
+#if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG) && CONFIG_TOTEM_DIAG_HEARTBEAT_MIN > 0
+/* Journal heartbeat (k=47). The printk tick above only reaches an attached console;
+ * after an unexplained reset the journal is the only evidence, so it also needs a
+ * periodic power sample. Packing is documented at TOTEM_HEVT_HEARTBEAT. */
+static void totem_batt_heartbeat_handler(struct k_work *work) {
+    uint16_t word = MIN(battery_mv(), 0x7FFF);
+
+    if (left_on_usb()) {
+        word |= 0x8000;
+    }
+    totem_host_event_log_record(TOTEM_HEVT_HEARTBEAT, (int8_t)zmk_ble_active_profile_index(),
+                                (int8_t)peripheral_soc, zmk_battery_state_of_charge(),
+                                (uint8_t)word, (uint8_t)(word >> 8));
+    k_work_reschedule(k_work_delayable_from_work(work),
+                      K_MINUTES(CONFIG_TOTEM_DIAG_HEARTBEAT_MIN));
+}
+
+static K_WORK_DELAYABLE_DEFINE(totem_batt_heartbeat, totem_batt_heartbeat_handler);
+
+static void totem_batt_heartbeat_start(void) {
+    /* First sample after ZMK's first battery read, so boot voltage is recorded. */
+    k_work_schedule(&totem_batt_heartbeat, K_SECONDS(60));
+}
+#else
+static void totem_batt_heartbeat_start(void) {}
+#endif
+
 static void totem_batt_studio_handler(struct k_work *work) {
     char levels[40];
     int rc;
@@ -191,6 +244,7 @@ static int totem_battery_log_init(void) {
      * shortly after boot, not one interval later. */
     k_work_schedule(&totem_batt_tick, K_SECONDS(10));
     k_work_schedule(&totem_batt_studio, K_SECONDS(2));
+    totem_batt_heartbeat_start();
     return 0;
 }
 

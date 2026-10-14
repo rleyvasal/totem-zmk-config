@@ -63,6 +63,14 @@ tail, not the exact failure instant; profile/endpoint are -1 if not retained.
 Boot evidence joins the usual rate-limited rotating journal. No new per-key or
 per-radio-event logging is enabled.
 
+Heartbeat `k=47` adds a power sample to the journal one minute after boot and then
+every `CONFIG_TOTEM_DIAG_HEARTBEAT_MIN` (default 30) minutes: `i` selected profile,
+`a` right SoC (-1 unknown), `r` left SoC, and `w`/`x` the low/high bytes of a 16-bit
+word whose bits 0..14 are battery mV and bit 15 is USB power. After an unexplained
+reset, the last heartbeat bounds when it happened and shows whether the battery was
+sagging. A reset with `raw=00000000`, `ram=0` and a falling heartbeat voltage points
+to power loss; the bootloader preserves RESETREAS (a pin reset reads `00000001`).
+
 Timing diagnostics on the left half use the same uptime clock: `k=26/27` mark
 settings-write entry/return (match `r` category and `w` pair ID), `k=28` marks
 controller disconnect reception before host cleanup, and `k=1` is the later

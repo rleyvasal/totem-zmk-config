@@ -179,6 +179,18 @@ config TOTEM_BATTERY_LOG_INTERVAL_SEC
 	  long silences. The tick provides regular samples to fit a slope against. 300 s
 	  is ~50 samples across a 4-hour drain and ~575 across two days.
 
+config TOTEM_DIAG_HEARTBEAT_MIN
+	int "Minutes between battery/liveness heartbeats in the diagnostic journal"
+	depends on TOTEM_BATTERY_LOG && TOTEM_HOST_EVENT_LOG
+	default 30
+	range 0 1440
+	help
+	  Record event k=47 (battery mV, SoC, USB, selected profile) into the persistent
+	  journal this often, plus once a minute after boot. Without it, a quiet keyboard
+	  can go hours without a saved event, so the "previous uptime" after an
+	  unexplained reset is only a loose lower bound and a dying battery is invisible.
+	  Each heartbeat requests one coalesced journal write. 0 disables it.
+
 config TOTEM_USB_CONSOLE
 	bool "USB CDC console on production builds (printk only, no log subsystem)"
 	depends on !ZMK_STUDIO
