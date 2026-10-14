@@ -9,7 +9,7 @@ manifest:
   projects:
     - name: zmk
       remote: fork
-      repo-path: zmk-next
+      repo-path: zmk-totem
       # zmk-next-logs-batt: USB HID must not fall back to BLE, last-cell battery,
       # framed Studio log TX. Must match this config branch or the left image
       # fails to link (zmk_battery_last_cell_soc, zmk_rpc_tx_raw_payload, …).
@@ -20,7 +20,7 @@ manifest:
       # 4d476144: link notifications do not restart profile-switch advertising.
       # d54734f2: serialized advertising and tested disconnect-before-advertise handoff.
       # 25907404: retain Zephyr's managed CCC persistence with subscription diagnostics.
-      revision: 25907404f5631ca50d4eb3017f9c5bb6d2a6f3a9
+      revision: dd819daa9fff00692836662e9a1e5e7a4762a474
       import: app/west.yml
     # Overrides the zephyr project imported from zmk's app/west.yml: projects in
     # this top-level manifest take precedence over imported ones of the same name.
