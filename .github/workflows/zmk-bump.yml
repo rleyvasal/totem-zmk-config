@@ -78,10 +78,15 @@ jobs:
           elif git -C zmk merge --no-edit -m "Merge ZMK Next ${tag} into ${FORK_BRANCH}" "$tag"; then
             echo "pushed=true" >> "$GITHUB_OUTPUT"
           else
-            # ZMK Next's README and docs always win; anything else needs a person.
-            git -C zmk diff --name-only --diff-filter=U | grep -E '^(README\.md|docs/)' \
+            # zmk-totem's README (the Totem patch summary) always wins; ZMK Next's
+            # docs always win. Anything else needs a person.
+            if git -C zmk diff --name-only --diff-filter=U | grep -qx 'README\.md'; then
+              git -C zmk checkout --ours -- README.md
+              git -C zmk add -- README.md
+            fi
+            git -C zmk diff --name-only --diff-filter=U | grep -E '^docs/' \
               | xargs -r git -C zmk checkout --theirs --
-            git -C zmk diff --name-only --diff-filter=U | grep -E '^(README\.md|docs/)' \
+            git -C zmk diff --name-only --diff-filter=U | grep -E '^docs/' \
               | xargs -r git -C zmk add --
             if [ -n "$(git -C zmk diff --name-only --diff-filter=U)" ]; then
               git -C zmk diff --name-only --diff-filter=U | tee conflicts.txt
