@@ -120,6 +120,71 @@ int main(void) {
                            input=harness, text=True, check=True, timeout=30)
             subprocess.run([executable], check=True, timeout=3)
 
+    def test_module_crash_is_imported_but_never_overwrites_a_hang(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "src/totem_fault.c").read_text()
+        helpers = source[source.index("#define FAULT_CRC_OFFSET"):
+                         source.index("static void fault_fill_thread")]
+        start = source.index("static void fault_import_module_crash(void) {")
+        importer = source[start:source.index("\n}\n", start) + 3]
+        harness = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+#include "totem_fault.h"
+#define TOTEM_FAULT_MAGIC 0x544F4654u
+struct zmk_studio_log_fault {
+    uint32_t reason, pc, lr, uptime_ms, thread;
+    char thread_name[16];
+};
+static struct totem_fault_record fault_rec;
+static bool module_has_crash;
+static uint32_t crc32_ieee(const uint8_t *p, size_t n) {
+    uint32_t c = 0; for (size_t i = 0; i < n; i++) c = c * 33 + p[i]; return c;
+}
+static bool zmk_studio_log_boot_fault(struct zmk_studio_log_fault *out) {
+    if (module_has_crash) {
+        *out = (struct zmk_studio_log_fault){.reason = 3, .pc = 0x1234, .lr = 0x5678,
+                                             .uptime_ms = 9000, .thread = 0xabc,
+                                             .thread_name = "sysworkq"};
+    }
+    return module_has_crash;
+}
+/* HELPERS */
+/* IMPORTER */
+int main(void) {
+    /* No crash anywhere: nothing is invented. */
+    fault_import_module_crash();
+    assert(!fault_valid(&fault_rec));
+
+    /* A module crash becomes a sealed Totem CRASH record with the same facts. */
+    module_has_crash = true;
+    fault_import_module_crash();
+    assert(fault_valid(&fault_rec) && fault_rec.kind == TOTEM_FAULT_CRASH);
+    assert(fault_rec.reason == 3 && fault_rec.pc == 0x1234 && fault_rec.lr == 0x5678);
+    assert(fault_rec.uptime_ms == 9000 && fault_rec.channel == -1);
+    assert(strcmp(fault_rec.label, "sysworkq") == 0);
+
+    /* A task watchdog HANG noted by Totem wins: it explains the reset, the crash cannot. */
+    memset(&fault_rec, 0, sizeof(fault_rec));
+    fault_rec.kind = TOTEM_FAULT_TASK_WDT; fault_rec.channel = 1;
+    fault_seal(&fault_rec);
+    fault_import_module_crash();
+    assert(fault_rec.kind == TOTEM_FAULT_TASK_WDT && fault_rec.channel == 1);
+    return 0;
+}
+'''
+        harness = harness.replace("/* HELPERS */", helpers)
+        harness = harness.replace("/* IMPORTER */", importer)
+        with tempfile.TemporaryDirectory() as directory:
+            executable = str(Path(directory) / "fault_import_test")
+            subprocess.run([os.environ.get("CC", "cc"), "-Wall", "-Wextra", "-Werror",
+                            "-Wno-unused-function", "-I", str(root / "include"),
+                            "-x", "c", "-", "-o", executable],
+                           input=harness, text=True, check=True, timeout=30)
+            subprocess.run([executable], check=True, timeout=3)
+
     def test_early_capture_validation_counter_and_deferred_write(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "src/boot_diagnostics.c").read_text()

@@ -43,6 +43,11 @@
 #include <zephyr/drivers/hwinfo.h>
 #endif
 
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_RESET_REASON)
+/* On the Studio image the zmk-studio-log module reads and clears the reset cause first. */
+#include <zmk_studio_log/diag.h>
+#endif
+
 #include <totem_fault.h>
 #include <totem_host_event_log.h>
 #include <totem_boot_diagnostics.h>
@@ -105,7 +110,11 @@ static uint8_t compress_reset_cause(uint32_t cause) {
 
 static void totem_capture_reset_reason(void) {
     uint32_t cause = 0;
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_RESET_REASON)
+    int err = zmk_studio_log_reset_cause(&cause);
+#else
     int err = hwinfo_get_reset_cause(&cause);
+#endif
 #if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
     totem_boot_diagnostics_reset_result(err);
 #endif
@@ -136,8 +145,11 @@ static void totem_capture_reset_reason(void) {
     totem_host_event_log_record(TOTEM_HEVT_BOOT, -1, -1, totem_reset_flags, 0, 0);
 
     /* Clear so the *next* boot reports its own cause and not a sticky union of
-     * every reset this board has ever taken (nRF RESETREAS is cumulative). */
+     * every reset this board has ever taken (nRF RESETREAS is cumulative). The
+     * module has already done this when it owns the reset reason. */
+#if !IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_RESET_REASON)
     hwinfo_clear_reset_cause();
+#endif
 }
 
 #else /* capture disabled, or no HWINFO backend on this SoC */

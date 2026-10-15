@@ -21,6 +21,12 @@
 #include <totem_host_event_log.h>
 #include <totem_boot_diagnostics.h>
 
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
+/* On the Studio image the zmk-studio-log module owns the fatal error handler; its record of the
+ * crash is copied in at boot so the journal and the totem_fault line look the same as before. */
+#include <zmk_studio_log/diag.h>
+#endif
+
 #define TOTEM_FAULT_MAGIC 0x544F4654u /* "TOFT" */
 
 /* __noinit: not zeroed at startup, so it carries across a soft reset. */
@@ -84,7 +90,7 @@ void totem_fault_note_task_wdt(int channel_id, const char *label) {
     fault_seal(&fault_rec);
 }
 
-#if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE)
+#if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE) && !IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
 /* Overrides Zephyr's weak default, which would otherwise halt the CPU (or reboot,
  * depending on CONFIG_RESET_ON_FATAL_ERROR) without leaving anything behind. */
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf) {
@@ -118,7 +124,28 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf) 
     sys_reboot(SYS_REBOOT_COLD);
     CODE_UNREACHABLE;
 }
-#endif /* CONFIG_TOTEM_FAULT_CAPTURE */
+#endif /* CONFIG_TOTEM_FAULT_CAPTURE && !CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE */
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
+/* A task watchdog HANG is still noted here directly; a crash comes from the module. */
+static void fault_import_module_crash(void) {
+    struct zmk_studio_log_fault crash;
+
+    if (fault_valid(&fault_rec) || !zmk_studio_log_boot_fault(&crash)) {
+        return;
+    }
+    memset(&fault_rec, 0, sizeof(fault_rec));
+    fault_rec.kind = TOTEM_FAULT_CRASH;
+    fault_rec.channel = -1;
+    fault_rec.reason = (uint16_t)crash.reason;
+    fault_rec.pc = crash.pc;
+    fault_rec.lr = crash.lr;
+    fault_rec.uptime_ms = crash.uptime_ms;
+    fault_rec.thread = crash.thread;
+    strncpy(fault_rec.label, crash.thread_name, sizeof(fault_rec.label) - 1);
+    fault_seal(&fault_rec);
+}
+#endif
 
 static const char *fault_reason_str(uint16_t reason) {
     switch (reason) {
@@ -138,6 +165,9 @@ static const char *fault_reason_str(uint16_t reason) {
 }
 
 void totem_fault_report_and_clear(void) {
+#if defined(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
+    fault_import_module_crash();
+#endif
     uint8_t status = fault_rec.magic == 0 ? 0 :
                      fault_rec.magic != TOTEM_FAULT_MAGIC ? 1 :
                      fault_valid(&fault_rec) ? 3 : 2;

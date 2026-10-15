@@ -19,10 +19,11 @@ config ZMK_RECONNECT_WATCH
 config ZMK_STUDIO_CONSOLE
 	bool "Mux printk onto the Studio RPC CDC as framed log lines"
 	depends on ZMK_STUDIO
+	select ZMK_STUDIO_LOG
 	default n
 	help
 	  Same feature as TOTEM_STUDIO_CONSOLE. One USB serial port: Studio RPC
-	  plus SOF-framed 'L'/'B' payloads for the configurator log panel.
+	  plus framed 'L'/'K' payloads for the configurator log panel.
 
 config ZMK_BATTERY_LOG
 	bool "printk both halves' battery (central split only)"
@@ -217,12 +218,14 @@ config TOTEM_USB_CONSOLE
 config TOTEM_STUDIO_CONSOLE
 	bool "Mux printk onto the Studio RPC CDC as framed log lines"
 	depends on ZMK_STUDIO
+	select ZMK_STUDIO_LOG
 	default y if ZMK_STUDIO_CONSOLE
 	help
-	  One USB serial port. Studio RPC owns the CDC; printk lines are sent as
-	  SOF-framed payloads that start with 'L' so the configurator can split
+	  One USB serial port. Studio RPC owns the CDC; the zmk-studio-log module
+	  sends printk lines as framed 'L' payloads so the configurator can split
 	  remap traffic from the BLE/host log. Does not enable UART_CONSOLE (that
-	  would interleave with RPC). Module src/totem_studio_log.c.
+	  would interleave with RPC). src/totem_studio_extras.c adds 'K' battery
+	  snapshots, the 'D' journal dump and the 10 s heartbeat.
 
 config TOTEM_USB_QUIET_HOST
 	bool "Drop host BLE while USB is providing HID (keep the split link)"

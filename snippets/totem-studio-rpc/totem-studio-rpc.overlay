@@ -1,6 +1,6 @@
 /*
  * One USB CDC: Studio RPC and printk share it.
- * Printk is framed as L-prefixed Studio frames by src/totem_studio_log.c
+ * Printk is framed as L-prefixed Studio frames by the zmk-studio-log module
  * (uart_console must not also own this UART).
  */
 / {

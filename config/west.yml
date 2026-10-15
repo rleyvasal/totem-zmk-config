@@ -10,9 +10,11 @@ manifest:
     - name: zmk
       remote: fork
       repo-path: zmk-totem
-      # zmk-next-logs-batt: USB HID must not fall back to BLE, last-cell battery,
-      # framed Studio log TX. Must match this config branch or the left image
-      # fails to link (zmk_battery_last_cell_soc, zmk_rpc_tx_raw_payload, …).
+      # zmk-next-logs-batt: USB HID must not fall back to BLE, last-cell battery.
+      # totem-studio-log (31be6fd): Studio raw frames from zmk-studio-log's
+      # patches/0001-studio-raw-frames.patch replace the fork's own log hooks.
+      # Must match this config branch or the left image fails to link
+      # (zmk_battery_last_cell_soc, zmk_rpc_send_raw_frame, …).
       # a87562a6: preserve the last valid right-half battery reading across a
       # split disconnect; a fresh GATT read replaces it after reconnection.
       # 6848616d / d42fe223: nonblocking diagnostics and stale BLE connection checks.
@@ -20,8 +22,13 @@ manifest:
       # 4d476144: link notifications do not restart profile-switch advertising.
       # d54734f2: serialized advertising and tested disconnect-before-advertise handoff.
       # 25907404: retain Zephyr's managed CCC persistence with subscription diagnostics.
-      revision: dd819daa9fff00692836662e9a1e5e7a4762a474
+      revision: 31be6fdc8fe92415b992c9a68ceaabf347b90060
       import: app/west.yml
+    # Studio log stream, reset reason, crash capture and log history across
+    # restarts for the left Studio image (see snippets/totem-studio-rpc).
+    - name: zmk-studio-log
+      remote: fork
+      revision: 4bd62adcb701ff90d196512b6316e7a03e97ef1a
     # Overrides the zephyr project imported from zmk's app/west.yml: projects in
     # this top-level manifest take precedence over imported ones of the same name.
     # Branch v4.1.0+zmk-fixes+prepare-pipeline = zmkfirmware v4.1.0+zmk-fixes

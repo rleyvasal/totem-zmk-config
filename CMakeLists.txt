@@ -93,8 +93,13 @@ if(CONFIG_ZMK_STUDIO)
   zephyr_library_sources(src/totem_studio_usb.c)
 endif()
 
+# The log stream itself comes from the zmk-studio-log module; this adds Totem's
+# battery frames, journal dump and heartbeat on top.
+# Built into ZMK's app target: ZMK_RPC_RAW_FRAME_HANDLER needs <zmk/studio/rpc.h>, which
+# includes protobuf headers generated for that target only.
 if(CONFIG_TOTEM_STUDIO_CONSOLE OR CONFIG_ZMK_STUDIO_CONSOLE)
-  zephyr_library_sources(src/totem_studio_log.c)
+  target_sources(app PRIVATE src/totem_studio_extras.c)
+  target_include_directories(app PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include)
 endif()
 
 if(CONFIG_TOTEM_USB_QUIET_HOST)
