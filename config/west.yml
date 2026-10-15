@@ -22,7 +22,10 @@ manifest:
       # 4d476144: link notifications do not restart profile-switch advertising.
       # d54734f2: serialized advertising and tested disconnect-before-advertise handoff.
       # 25907404: retain Zephyr's managed CCC persistence with subscription diagnostics.
-      revision: 31be6fdc8fe92415b992c9a68ceaabf347b90060
+      # right-charge-state (e1b99c0): CONFIG_ZMK_BATTERY_CHARGE_STATUS, the right
+      # half's charge state over 0x2BED; 106c788: no charge-voltage cell level
+      # remembered when booting on USB.
+      revision: e1b99c0e1d1c4f1bd2223f65f3a7d28ca3c57cc9
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
