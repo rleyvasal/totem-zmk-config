@@ -52,6 +52,10 @@ __attribute__((weak)) int totem_studio_send_battery(const char *line) {
  * which look identical if you print an unsigned 0. */
 static int peripheral_soc = -1;
 
+/* The right half reports VBUS in its Battery Level Status (0x2BED). While it is
+ * on USB its level is its last on-battery reading, printed as right=NN usb. */
+static bool peripheral_charging;
+
 /* Rate limit. The peripheral battery event can storm: a failing split read retries
  * and each attempt raises an event, and 2026-07-30 produced ~22 in two seconds, all
  * reporting 0%. Printing one line per event turns that into a burst of printk to a
@@ -63,12 +67,14 @@ static int peripheral_soc = -1;
 static int64_t last_event_print_ms;
 static int last_printed_local = -1;
 static int last_printed_periph = -2;
+static bool last_printed_charging;
 
 static bool batt_event_should_print(void) {
     int local = zmk_battery_state_of_charge();
     int64_t now = k_uptime_get();
 
-    if (local == last_printed_local && peripheral_soc == last_printed_periph) {
+    if (local == last_printed_local && peripheral_soc == last_printed_periph &&
+        peripheral_charging == last_printed_charging) {
         return false;
     }
     if (last_event_print_ms != 0 && (now - last_event_print_ms) < BATT_EVENT_MIN_INTERVAL_MS) {
@@ -78,6 +84,7 @@ static bool batt_event_should_print(void) {
     last_event_print_ms = now;
     last_printed_local = local;
     last_printed_periph = peripheral_soc;
+    last_printed_charging = peripheral_charging;
     return true;
 }
 
@@ -109,34 +116,34 @@ static bool left_on_usb(void) {
 #endif
 }
 
-/* Compact levels for the Studio 'B' frame and for printk. While USB is in,
- * left=NN usb is the last cell reading (not charge voltage). */
+/* Compact levels for the Studio 'B' frame and for printk. While a half is on
+ * USB, NN usb is its last cell reading (not charge voltage). */
 static void format_levels(char *buf, size_t cap) {
     int cell = zmk_battery_last_cell_soc();
+    char left[16];
+    char right[16];
 
-    if (left_on_usb()) {
-        if (cell >= 0) {
-            if (peripheral_soc < 0) {
-                snprintk(buf, cap, "left=%d usb right=--", cell);
-            } else {
-                snprintk(buf, cap, "left=%d usb right=%d", cell, peripheral_soc);
-            }
-        } else if (peripheral_soc < 0) {
-            snprintk(buf, cap, "left=usb right=--");
-        } else {
-            snprintk(buf, cap, "left=usb right=%d", peripheral_soc);
-        }
-        return;
-    }
-    if (peripheral_soc < 0) {
-        snprintk(buf, cap, "left=%u right=--", zmk_battery_state_of_charge());
+    if (!left_on_usb()) {
+        snprintk(left, sizeof(left), "%u", zmk_battery_state_of_charge());
+    } else if (cell >= 0) {
+        snprintk(left, sizeof(left), "%d usb", cell);
     } else {
-        snprintk(buf, cap, "left=%u right=%d", zmk_battery_state_of_charge(), peripheral_soc);
+        snprintk(left, sizeof(left), "usb");
     }
+
+    if (peripheral_soc < 0) {
+        snprintk(right, sizeof(right), "--");
+    } else if (peripheral_charging) {
+        snprintk(right, sizeof(right), "%d usb", peripheral_soc);
+    } else {
+        snprintk(right, sizeof(right), "%d", peripheral_soc);
+    }
+
+    snprintk(buf, cap, "left=%s right=%s", left, right);
 }
 
 static void totem_batt_push_studio(void) {
-    char levels[40];
+    char levels[48];
 
     format_levels(levels, sizeof(levels));
     (void)totem_studio_send_battery(levels);
@@ -144,7 +151,7 @@ static void totem_batt_push_studio(void) {
 
 static void totem_batt_print(const char *why, bool with_mv) {
     uint32_t up_s = k_uptime_get_32() / 1000;
-    char levels[40];
+    char levels[48];
     uint16_t mv = battery_mv();
 
     format_levels(levels, sizeof(levels));
@@ -174,6 +181,19 @@ static int totem_batt_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_CHARGE_STATUS)
+    const struct zmk_peripheral_battery_charging_changed *cev =
+        as_zmk_peripheral_battery_charging_changed(eh);
+
+    if (cev != NULL) {
+        peripheral_charging = cev->charging;
+        if (batt_event_should_print()) {
+            totem_batt_print("periph", false);
+        }
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+#endif
+
     if (as_zmk_battery_state_changed(eh) != NULL && batt_event_should_print()) {
         totem_batt_print("local", false);
     }
@@ -184,6 +204,9 @@ static int totem_batt_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(totem_battery_log, totem_batt_listener);
 ZMK_SUBSCRIPTION(totem_battery_log, zmk_battery_state_changed);
 ZMK_SUBSCRIPTION(totem_battery_log, zmk_peripheral_battery_state_changed);
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_CHARGE_STATUS)
+ZMK_SUBSCRIPTION(totem_battery_log, zmk_peripheral_battery_charging_changed);
+#endif
 
 static void totem_batt_tick_handler(struct k_work *work) {
     /* Deliberately bypasses the rate limit: the tick IS the measurement, and a flat
@@ -223,7 +246,7 @@ static void totem_batt_heartbeat_start(void) {}
 #endif
 
 static void totem_batt_studio_handler(struct k_work *work) {
-    char levels[40];
+    char levels[48];
     int rc;
 
     if (!left_on_usb()) {
