@@ -239,6 +239,8 @@ static void totem_batt_studio_handler(struct k_work *work) {
 
 static K_WORK_DELAYABLE_DEFINE(totem_batt_studio, totem_batt_studio_handler);
 
+void totem_battery_send_now(void) { k_work_reschedule(&totem_batt_studio, K_NO_WAIT); }
+
 static int totem_battery_log_init(void) {
     /* First tick deliberately early: a drain measurement wants a starting point
      * shortly after boot, not one interval later. */
