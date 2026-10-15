@@ -25,7 +25,9 @@ manifest:
       # right-charge-state (e1b99c0): CONFIG_ZMK_BATTERY_CHARGE_STATUS, the right
       # half's charge state over 0x2BED; 106c788: no charge-voltage cell level
       # remembered when booting on USB.
-      revision: e1b99c0e1d1c4f1bd2223f65f3a7d28ca3c57cc9
+      # split-idle-interval (753ade5): CONFIG_ZMK_SPLIT_BLE_IDLE_INT / _IDLE_LATENCY,
+      # the split link at 60 ms / latency 4 while idle, 15 ms on the first key.
+      revision: 753ade5527519498bd336d2f43acfd8344284894
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
@@ -36,10 +38,14 @@ manifest:
     # this top-level manifest take precedence over imported ones of the same name.
     # Branch v4.1.0+zmk-fixes+prepare-pipeline = zmkfirmware v4.1.0+zmk-fixes
     # (10ba6d0c) + patches/zephyr-prepare-pipeline.patch (upstream d4d923938c1a).
+    # Branch v4.1.0+zmk-fixes+supervision-reset (ae038c05) adds on top: the
+    # controller restarts the supervision countdown at every connection update
+    # instant. Without it, switching the split link from the idle 60 ms back to
+    # 15 ms dropped it about 1 s later (a 4 s countdown kept in 60 ms events).
     # Keep the name-blocklist in sync with zmk's app/west.yml.
     - name: zephyr
       remote: fork
-      revision: af2b801f362d003974aba1dd332366ecf1a368b0
+      revision: ae038c052f6df868c1387f0b38a0940ac3476eb1
       clone-depth: 1
       import:
         name-blocklist:
