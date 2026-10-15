@@ -104,6 +104,16 @@ config TOTEM_RESET_REASON_CAPTURE
 	  Independent of TOTEM_WATCHDOG -- useful even with the watchdog off, since it
 	  also distinguishes brownouts from clean power-ons.
 
+config TOTEM_CONN_PARAMS_LOG
+	bool "printk each connection's interval, latency and timeout when they change"
+	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default n
+	help
+	  Print `totem_ble conn_params` on connect and on every parameter update, for the
+	  split link (role=0) and the host link (role=1). These decide most of the radio
+	  power and were not visible on a production image: this shows the split link's
+	  idle interval taking effect, and what the host actually granted.
+
 config TOTEM_BOOT_PROFILE_DUMP
 	bool "printk each profile's stored host address at boot"
 	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
