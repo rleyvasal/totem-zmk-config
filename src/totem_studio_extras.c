@@ -3,10 +3,10 @@
  * stream ('L' lines, 'C' on/off, history replay) and, on this image, restart
  * diagnostics.
  *
+ * 'K' battery snapshots and 'G' '1' requests moved into the module
+ * (CONFIG_ZMK_STUDIO_LOG_BATTERY), so any ZMK keyboard can serve them.
+ *
  * What stays Totem-specific:
- *   - 'K' battery snapshots for the configurator header (was 'B', which can
- *     start a protobuf message and is refused by zmk_rpc_send_raw_frame()).
- *     A 'G' '1' request from the host asks for one right away.
  *   - 'D' "Load retained log": dumps the Totem host event journal, then turns
  *     the live log on. Not registered when the module's own black box is
  *     enabled, since that claims 'D' too.
@@ -37,8 +37,6 @@
 #include <totem_host_event_log.h>
 #include <totem_studio_log.h>
 
-#define BATTERY_PREFIX ((uint8_t)'K')
-#define BATTERY_REQUEST_PREFIX ((uint8_t)'G')
 #define DUMP_PREFIX ((uint8_t)'D')
 #define HEARTBEAT_PERIOD K_SECONDS(10)
 
@@ -53,13 +51,6 @@ static bool usb_hid_ready(void) {
 #endif
 }
 
-int totem_studio_send_battery(const char *line) {
-    if (!line || !line[0] || !usb_hid_ready()) {
-        return -EAGAIN;
-    }
-    return zmk_studio_log_send_frame(BATTERY_PREFIX, line, strlen(line));
-}
-
 int totem_studio_send_diag_line(const char *line) {
     if (!line || !line[0]) {
         return -EMSGSIZE;
@@ -69,16 +60,6 @@ int totem_studio_send_diag_line(const char *line) {
     }
     return zmk_studio_log_send_line(line);
 }
-
-#if IS_ENABLED(CONFIG_TOTEM_BATTERY_LOG) || IS_ENABLED(CONFIG_ZMK_BATTERY_LOG)
-static void battery_request_cb(const uint8_t *payload, size_t len) {
-    if (len >= 2 && payload[1] == (uint8_t)'1') {
-        totem_battery_send_now();
-    }
-}
-
-ZMK_RPC_RAW_FRAME_HANDLER(totem_battery_request, BATTERY_REQUEST_PREFIX, battery_request_cb);
-#endif
 
 #if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG) && !IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_BLACK_BOX)
 /* Works while host BLE is suppressed and does not rely on a key combo reaching ZMK. */

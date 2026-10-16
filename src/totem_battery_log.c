@@ -23,6 +23,8 @@
  * printk, not LOG_*: this must work on the production image where CONFIG_LOG is off.
  */
 
+#include <string.h>
+
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
@@ -36,25 +38,18 @@
 #include <zmk/usb.h>
 #endif
 
-#include <totem_studio_log.h>
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_BATTERY)
+#include <zmk_studio_log/battery.h>
+#endif
 #if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
 #include <zmk/ble.h>
 #include <totem_host_event_log.h>
 #endif
 
-__attribute__((weak)) int totem_studio_send_battery(const char *line) {
-    ARG_UNUSED(line);
-    return -ENOTSUP;
-}
-
 /* -1 until the peripheral has reported at least once. Distinguishes "right half has
  * not been heard from" (split link down, or it is off) from "right half is at 0%",
  * which look identical if you print an unsigned 0. */
 static int peripheral_soc = -1;
-
-/* The right half reports VBUS in its Battery Level Status (0x2BED). While it is
- * on USB its level is its last on-battery reading, printed as right=NN usb. */
-static bool peripheral_charging;
 
 /* Rate limit. The peripheral battery event can storm: a failing split read retries
  * and each attempt raises an event, and 2026-07-30 produced ~22 in two seconds, all
@@ -64,17 +59,19 @@ static bool peripheral_charging;
  * print at most once a second, and repeats of an unchanged value are dropped. */
 #define BATT_EVENT_MIN_INTERVAL_MS 1000
 
+#define LEVELS_MAX 48
+
 static int64_t last_event_print_ms;
-static int last_printed_local = -1;
-static int last_printed_periph = -2;
-static bool last_printed_charging;
+static char last_printed[LEVELS_MAX];
+
+static void format_levels(char *buf, size_t cap);
 
 static bool batt_event_should_print(void) {
-    int local = zmk_battery_state_of_charge();
+    char levels[LEVELS_MAX];
     int64_t now = k_uptime_get();
 
-    if (local == last_printed_local && peripheral_soc == last_printed_periph &&
-        peripheral_charging == last_printed_charging) {
+    format_levels(levels, sizeof(levels));
+    if (strcmp(levels, last_printed) == 0) {
         return false;
     }
     if (last_event_print_ms != 0 && (now - last_event_print_ms) < BATT_EVENT_MIN_INTERVAL_MS) {
@@ -82,9 +79,7 @@ static bool batt_event_should_print(void) {
     }
 
     last_event_print_ms = now;
-    last_printed_local = local;
-    last_printed_periph = peripheral_soc;
-    last_printed_charging = peripheral_charging;
+    strcpy(last_printed, levels);
     return true;
 }
 
@@ -116,42 +111,24 @@ static bool left_on_usb(void) {
 #endif
 }
 
-/* Compact levels for the Studio 'B' frame and for printk. While a half is on
- * USB, NN usb is its last cell reading (not charge voltage). */
+/* Levels as the 'K' battery frame carries them (zmk-studio-log), e.g.
+ * "left=78 usb right=15": on USB, NN usb is the cell level (not charge voltage),
+ * NN usb full once the charger is done. */
 static void format_levels(char *buf, size_t cap) {
-    int cell = zmk_battery_last_cell_soc();
-    char left[16];
-    char right[16];
-
-    if (!left_on_usb()) {
-        snprintk(left, sizeof(left), "%u", zmk_battery_state_of_charge());
-    } else if (cell >= 0) {
-        snprintk(left, sizeof(left), "%d usb", cell);
-    } else {
-        snprintk(left, sizeof(left), "usb");
-    }
-
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_BATTERY)
+    (void)zmk_studio_log_battery_snapshot(buf, cap);
+#else
     if (peripheral_soc < 0) {
-        snprintk(right, sizeof(right), "--");
-    } else if (peripheral_charging) {
-        snprintk(right, sizeof(right), "%d usb", peripheral_soc);
+        snprintk(buf, cap, "left=%u right=--", zmk_battery_reported_soc());
     } else {
-        snprintk(right, sizeof(right), "%d", peripheral_soc);
+        snprintk(buf, cap, "left=%u right=%d", zmk_battery_reported_soc(), peripheral_soc);
     }
-
-    snprintk(buf, cap, "left=%s right=%s", left, right);
-}
-
-static void totem_batt_push_studio(void) {
-    char levels[48];
-
-    format_levels(levels, sizeof(levels));
-    (void)totem_studio_send_battery(levels);
+#endif
 }
 
 static void totem_batt_print(const char *why, bool with_mv) {
     uint32_t up_s = k_uptime_get_32() / 1000;
-    char levels[48];
+    char levels[LEVELS_MAX];
     uint16_t mv = battery_mv();
 
     format_levels(levels, sizeof(levels));
@@ -166,7 +143,6 @@ static void totem_batt_print(const char *why, bool with_mv) {
     } else {
         printk("totem_batt %s t=%us %s\n", why, up_s, levels);
     }
-    totem_batt_push_studio();
 }
 
 static int totem_batt_listener(const zmk_event_t *eh) {
@@ -186,7 +162,6 @@ static int totem_batt_listener(const zmk_event_t *eh) {
         as_zmk_peripheral_battery_charging_changed(eh);
 
     if (cev != NULL) {
-        peripheral_charging = cev->charging;
         if (batt_event_should_print()) {
             totem_batt_print("periph", false);
         }
@@ -245,30 +220,10 @@ static void totem_batt_heartbeat_start(void) {
 static void totem_batt_heartbeat_start(void) {}
 #endif
 
-static void totem_batt_studio_handler(struct k_work *work) {
-    char levels[48];
-    int rc;
-
-    if (!left_on_usb()) {
-        k_work_reschedule(k_work_delayable_from_work(work), K_SECONDS(10));
-        return;
-    }
-    format_levels(levels, sizeof(levels));
-    rc = totem_studio_send_battery(levels);
-    /* Retry sooner until the configurator has DTR so Connect shows L/R chips
-     * without Enable log or the 5 min printk tick. */
-    k_work_reschedule(k_work_delayable_from_work(work), rc == 0 ? K_SECONDS(10) : K_SECONDS(2));
-}
-
-static K_WORK_DELAYABLE_DEFINE(totem_batt_studio, totem_batt_studio_handler);
-
-void totem_battery_send_now(void) { k_work_reschedule(&totem_batt_studio, K_NO_WAIT); }
-
 static int totem_battery_log_init(void) {
     /* First tick deliberately early: a drain measurement wants a starting point
      * shortly after boot, not one interval later. */
     k_work_schedule(&totem_batt_tick, K_SECONDS(10));
-    k_work_schedule(&totem_batt_studio, K_SECONDS(2));
     totem_batt_heartbeat_start();
     return 0;
 }
