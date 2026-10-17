@@ -1,3 +1,14 @@
+# Patches
+
+> **Historical:** `zmk-ble.patch` describes the BLE changes that were carried on
+> forks of ZMK (`rleyvasal/zmk`, later `rleyvasal/zmk-totem`). That code is now
+> in ZMK Next as Kconfig options, all off by default, which `config/totem.conf`
+> turns on (`CONFIG_ZMK_BLE_ADV_TIMEOUT`, `_ADV_BOOST`, `_ADV_FILTER_ACTIVE_PROFILE`,
+> `_RESELECT_RECONNECT`, `_PROFILE_HANDOFF`, ...). The `CONFIG_TOTEM_*` names below are the
+> old ones; see the table in `docs/zmk-next-upstreaming-plan.md` (P6). Nothing here is applied at
+> build time. `zephyr-prepare-pipeline.patch` is still in use, through the Zephyr
+> override in `config/west.yml`.
+
 # ZMK patch — advertising throttle + idle-disconnect
 
 `zmk-ble.patch` is a small change to ZMK's `app/src/ble.c`, central-half only,

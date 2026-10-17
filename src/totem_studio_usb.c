@@ -38,7 +38,7 @@ static void totem_studio_prefer_usb(struct k_work *work) {
     if (!zmk_usb_is_powered()) {
         tries = 0;
         /* Cable out: apply the profile selected while USB was up. */
-        zmk_ble_totem_wake_ads();
+        zmk_ble_adv_wake();
         return;
     }
     zmk_studio_uart_rearm();

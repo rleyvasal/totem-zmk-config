@@ -9,28 +9,14 @@ manifest:
   projects:
     - name: zmk
       remote: fork
-      repo-path: zmk-totem
-      # zmk-next-logs-batt: USB HID must not fall back to BLE, last-cell battery.
-      # totem-studio-log (31be6fd): Studio raw frames from zmk-studio-log's
-      # patches/0001-studio-raw-frames.patch replace the fork's own log hooks.
-      # Must match this config branch or the left image fails to link
-      # (zmk_battery_last_cell_soc, zmk_rpc_send_raw_frame, …).
-      # a87562a6: preserve the last valid right-half battery reading across a
-      # split disconnect; a fresh GATT read replaces it after reconnection.
-      # 6848616d / d42fe223: nonblocking diagnostics and stale BLE connection checks.
-      # 455194e8: finish settings loading before journal writes; offload battery saves.
-      # 4d476144: link notifications do not restart profile-switch advertising.
-      # d54734f2: serialized advertising and tested disconnect-before-advertise handoff.
-      # 25907404: retain Zephyr's managed CCC persistence with subscription diagnostics.
-      # right-charge-state (e1b99c0): CONFIG_ZMK_BATTERY_CHARGE_STATUS, the right
-      # half's charge state over 0x2BED; 106c788: no charge-voltage cell level
-      # remembered when booting on USB.
-      # split-idle-interval (753ade5): CONFIG_ZMK_SPLIT_BLE_IDLE_INT / _IDLE_LATENCY,
-      # the split link at 60 ms / latency 4 while idle, 15 ms on the first key.
-      # battery-charge-state (ef07c75, b7a00d5, e6d0abd): zmk,battery-charger
-      # (charging, estimated level while charging), settle after unplug. The XIAO
-      # node has no status pin: P0.17 read "not charging" while the cell charged.
-      revision: e6d0abd09a4d25e31bb8257214333dac0d9a2248
+      repo-path: zmk-next
+      # ZMK Next main after the zmk-totem patches landed as Kconfig options,
+      # all off by default (rleyvasal/zmk-next #21-#28). config/totem.conf
+      # turns on the ones the Totem uses: battery hold on USB and charge state,
+      # the swapped BAS proxy, the idle split interval, USB-first while cabled,
+      # the multi-host advertising options, and Studio raw frames for the
+      # zmk-studio-log module.
+      revision: 3193ba7659e3f4f094ee5a6b9982669e9b8da133
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).

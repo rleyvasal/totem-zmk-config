@@ -12,8 +12,8 @@ HARNESS = r"""
 #include <stdbool.h>
 #include <stddef.h>
 #define IS_ENABLED(x) x
-#define CONFIG_TOTEM_ADV_BOOST 1
-#define CONFIG_TOTEM_ADV_BOOST_SEC 20
+#define CONFIG_ZMK_BLE_ADV_BOOST 1
+#define CONFIG_ZMK_BLE_ADV_BOOST_SEC 20
 #define RECONNECT_WATCH_STEP_SEC 8
 #define K_SECONDS(x) (x)
 #define ARG_UNUSED(x) ((void)(x))
@@ -30,7 +30,7 @@ static bool ladder_from_active_down;
 enum { RECONNECT_STEP_NONE, RECONNECT_STEP_READV };
 static bool totem_hid_is_usb(void) { return usb; }
 static bool totem_usb_cable_up(void) { return usb; }
-static bool zmk_ble_totem_ads_suppressed(void) { return suppressed; }
+static bool zmk_ble_host_adv_suppressed(void) { return suppressed; }
 static bool zmk_ble_active_profile_is_open(void) { return open_profile; }
 static bool zmk_ble_active_profile_is_connected(void) { return connected; }
 static int zmk_ble_active_profile_index(void) { return profile; }

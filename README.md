@@ -20,10 +20,10 @@ Custom ZMK firmware for the [GEIGEIGEIST Totem](https://github.com/GEIGEIGEIST/t
 |---|---|
 | `src/exclusive_host.c` | Disconnects non-active hosts so only the selected profile stays linked |
 | `src/lazy_inactive_host.c` | Optional experimental multi-link mode; disabled by default |
-| `patches/zmk-ble.patch` on fork `rleyvasal/zmk` | Finite advertising throttle and profile-switch boost (in ZMK `ble.c`) |
-| `config/west.yml` | Pins a **commit SHA** of the patched fork (reproducible builds) |
+| [ZMK Next](https://github.com/rleyvasal/zmk-next) options in `config/totem.conf` | Advertising timeout and profile-switch boost, active-profile filter, profile handoff, USB-first while cabled, battery hold and charge state (`CONFIG_ZMK_BLE_*`, `CONFIG_ZMK_BATTERY_*`) |
+| `config/west.yml` | Pins a **commit SHA** of ZMK Next (reproducible builds) |
 
-Human-readable fork branch names look like `zmk-optimized-<base-sha>`; west tracks the **SHA** of the applied tip. See `patches/README.md` and `.github/workflows/zmk-bump.yml` (stable-release bumps).
+The firmware is plain ZMK Next with options turned on; nothing is patched. `.github/workflows/zmk-bump.yml` opens a PR each week when a newer ZMK Next release is out. `docs/zmk-next-upstreaming-plan.md` records how the former `rleyvasal/zmk-totem` patches became those options.
 
 ### Switching computers
 
