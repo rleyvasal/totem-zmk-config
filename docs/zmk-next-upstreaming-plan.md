@@ -206,13 +206,25 @@ Six commits on `9036dec4`:
 - Tests: `ble/advertising_owner`, `ble/profile_notifications`, `ble/keyboard_ccc`, plus an off case
   that checks `update_advertising()` makes the same choices as upstream.
 
-### P7. Studio raw frames
-- Commits: `31be6fdc` (gated part) with `dfdcdef3` folded in, `6848616d`, and the `rpc.h` part of `fd192e03`.
-- Kconfig: **new** `ZMK_STUDIO_RPC_RAW_FRAMES` (default n, depends on `ZMK_STUDIO_RPC`). When off,
-  `rpc_read_cb` has no prefix check and the linker section is not added.
-- Follow-up in zmk-studio-log: delete `patches/0001-studio-raw-frames.patch`, and have the module's
-  Kconfig `select ZMK_STUDIO_RPC_RAW_FRAMES`.
-- Tests: `studio/raw_tx`, extended with the off case.
+### P7. Studio raw frames: cut 2026-10-16, local branch `p7-studio-raw-frames`, not pushed
+Two commits on `9036dec4`. The branch is independent of P1, and the two merge without conflicts.
+1. `37eb6042` Export `zmk_studio_uart_rearm()` for the Studio UART transport (`fd192e03`). It is not
+   gated: the helper does nothing unless a module calls it. Totem's `totem_studio_usb.c` calls it.
+2. `3640a015` Add Studio raw frames for modules behind `ZMK_STUDIO_RPC_RAW_FRAMES` (`dfdcdef3`,
+   `6848616d`, `31be6fdc`).
+
+- Kconfig: **new** `ZMK_STUDIO_RPC_RAW_FRAMES` (default n, inside `if ZMK_STUDIO_RPC`). When it is off,
+  `rpc_read_cb()` and `rpc_main()` behave exactly as before, `zmk_rpc_send_raw_frame()` and
+  `ZMK_RPC_RAW_FRAME_HANDLER()` are not declared, and the linker section is not added.
+  zmk-studio-log's existing `#ifndef ZMK_RPC_RAW_FRAME_HANDLER` → `#error` therefore still catches a missing option.
+- Tests: `studio/raw_tx`, from zmk-totem, now has three cases. The send and receive tests run with the option on.
+  The receive test also runs with it off: `C` frames reach the protobuf decoder unchanged. A
+  preprocessor check confirms the sender is not compiled when the option is off. `pre-commit.yml` runs it.
+- Checked: clang-format is clean. Two nice_nano//zmk + corne_left Studio builds pass. Off: no raw-frame
+  symbols in the ELF. On, with zmk-studio-log `531e4e7` and `CONFIG_ZMK_STUDIO_LOG=y`: links without the module's patch
+  (`zmk_rpc_send_raw_frame`, `zmk_studio_log_control` present). Not checked on hardware.
+- Follow-up in zmk-studio-log, after P7 lands: delete `patches/0001-studio-raw-frames.patch`, add
+  `select ZMK_STUDIO_RPC_RAW_FRAMES` to `ZMK_STUDIO_LOG`, and change the `#error` text to name the option.
 
 ## 3. Decisions on the core BLE/USB patches
 
@@ -240,7 +252,7 @@ Today, nothing else needs to remain a patch.
 
 ## 5. Retiring zmk-totem
 
-1. **Pause the weekly bump now.** `.github/workflows/zmk-bump.yml` merges each ZMK Next release
+1. **Pause the weekly bump now** (done locally on totem-zmk-config branch `pause-zmk-bump`, `ac547de`, not pushed). `.github/workflows/zmk-bump.yml` merges each ZMK Next release
    into zmk-totem `totem`. Once P1 lands, that merge conflicts with `totem`'s own copies of the same
    hunks, and the conflicts get worse with each PR after it. Change the schedule to `workflow_dispatch` only for the migration.
    (Another session committed `c721484` to `zmk-bump.yml` today, which retired the `persistent-diagnostic-log` trial branch. Start from `main` after that commit.)
