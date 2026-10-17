@@ -175,7 +175,7 @@ static void heartbeat_work_cb(struct k_work *work) {
     }
     bt_conn_foreach(BT_CONN_TYPE_LE, rssi_one, &acc);
     printk("totem_log t=%us usb=1 hid=%s adv=%s hosts=%u split=%u\n", k_uptime_get_32() / 1000, hid,
-           zmk_ble_totem_adv_state(), acc.hosts, acc.split);
+           zmk_ble_adv_state(), acc.hosts, acc.split);
     if (acc.peers == 0) {
         printk("totem_ble rssi none\n");
     } else {

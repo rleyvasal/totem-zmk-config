@@ -40,9 +40,9 @@ LOG_MODULE_REGISTER(reconnect_watch, CONFIG_ZMK_LOG_LEVEL);
  * so we do not abort an in-flight host reconnect (e.g. slow Windows) with a
  * mid-window reselect. Later steps use RECONNECT_WATCH_STEP_SEC. */
 static int reconnect_watch_first_delay_sec(void) {
-#if IS_ENABLED(CONFIG_TOTEM_ADV_BOOST)
-    if (CONFIG_TOTEM_ADV_BOOST_SEC > RECONNECT_WATCH_STEP_SEC) {
-        return CONFIG_TOTEM_ADV_BOOST_SEC;
+#if IS_ENABLED(CONFIG_ZMK_BLE_ADV_BOOST)
+    if (CONFIG_ZMK_BLE_ADV_BOOST_SEC > RECONNECT_WATCH_STEP_SEC) {
+        return CONFIG_ZMK_BLE_ADV_BOOST_SEC;
     }
 #endif
     return RECONNECT_WATCH_STEP_SEC;
@@ -137,7 +137,7 @@ static void reconnect_watch_reset(void) {
 static void reconnect_watch_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
-    if (totem_hid_is_usb() || totem_usb_cable_up() || zmk_ble_totem_ads_suppressed()) {
+    if (totem_hid_is_usb() || totem_usb_cable_up() || zmk_ble_host_adv_suppressed()) {
         reconnect_watch_reset();
         return;
     }
@@ -183,10 +183,10 @@ static void reconnect_watch_work_handler(struct k_work *work) {
                                     (int8_t)zmk_ble_active_profile_index(), 1,
                                     (uint8_t)scan.host_count,
                                     ladder_from_active_down ? 1 : 0);
-#if IS_ENABLED(CONFIG_TOTEM_ADV_BOOST)
-        zmk_ble_totem_adv_boost_rearm();
+#if IS_ENABLED(CONFIG_ZMK_BLE_ADV_BOOST)
+        zmk_ble_adv_boost_rearm();
 #else
-        zmk_ble_totem_kick_open_adv();
+        zmk_ble_adv_kick();
 #endif
         next_step = RECONNECT_STEP_EVICT;
         k_work_schedule(&reconnect_watch_work, K_SECONDS(RECONNECT_WATCH_STEP_SEC));
@@ -225,7 +225,7 @@ static void reconnect_watch_work_handler(struct k_work *work) {
 
 /* BT_SEL / profile_changed: recovery ladder (step1 = densify only, no reselect). */
 static void reconnect_watch_arm_full(void) {
-    if (totem_hid_is_usb() || totem_usb_cable_up() || zmk_ble_totem_ads_suppressed()) {
+    if (totem_hid_is_usb() || totem_usb_cable_up() || zmk_ble_host_adv_suppressed()) {
         reconnect_watch_reset();
         return;
     }
@@ -253,7 +253,7 @@ static void reconnect_watch_arm_light(void) {
         reconnect_watch_reset();
         return;
     }
-    if (zmk_ble_totem_ads_suppressed()) {
+    if (zmk_ble_host_adv_suppressed()) {
         TOTEM_BLE_INF("totem_ble active_down skip: ads_suppressed");
         return;
     }
@@ -286,7 +286,7 @@ static void active_down_arm_work_handler(struct k_work *work) {
         return;
     }
     /* Re-check at fire time — not only in disconnected callback. */
-    if (zmk_ble_totem_ads_suppressed()) {
+    if (zmk_ble_host_adv_suppressed()) {
         TOTEM_BLE_INF("totem_ble active_down skip: ads_suppressed");
         return;
     }

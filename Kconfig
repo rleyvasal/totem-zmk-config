@@ -251,6 +251,9 @@ config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
 	depends on ZMK_BLE
 	default y if ZMK_EXCLUSIVE_HOST
+	# ZMK Next's profile handoff disconnects the other hosts before advertising
+	# for a newly selected profile; this module keeps evicting them afterwards.
+	select ZMK_BLE_PROFILE_HANDOFF if ZMK_BLE_ADV_TIMEOUT && ZMK_SPLIT_ROLE_CENTRAL
 	help
 	  Disconnect any non-active host so only the selected computer stays linked.
 	  Prevents wake/cross-talk and dual-link battery cost, but every BT_SEL pays
@@ -302,18 +305,6 @@ config TOTEM_LAZY_HOST_TIMEOUT
 	help
 	  500 = 5 s.
 
-config TOTEM_EXCLUSIVE_DISCONNECT_REASON
-	hex "HCI reason code used to disconnect a background host"
-	depends on TOTEM_EXCLUSIVE_HOST
-	default 0x13
-	help
-	  Passed to bt_conn_disconnect() when evicting a background host. 0x13 =
-	  remote user terminated (default). Other reasons Zephyr accepts: 0x15 (remote
-	  powered off), 0x1A (unsupported remote feature), 0x05 (authentication
-	  failure). Tunable because some hosts (notably macOS) mishandle input after a
-	  plain user-terminated disconnect; a different reason may make the host
-	  reconnect cleanly.
-
 config TOTEM_EVICT_REQUIRES_BONDED_ACTIVE
 	bool "Never evict a bonded host while the active profile is unbonded"
 	depends on TOTEM_EXCLUSIVE_HOST
@@ -346,45 +337,6 @@ config TOTEM_BOND_HEAL_THRESHOLD
 	depends on TOTEM_BOND_HEAL
 	default 3
 	range 2 10
-
-config TOTEM_RESELECT_RECONNECT
-	bool "Re-selecting the active profile forces a soft reconnect"
-	depends on TOTEM_ADV_THROTTLE
-	default y
-	help
-	  Pressing BT_SEL for the profile that is already active disconnects that
-	  host (if connected) and re-advertises with the boost window. Soft recovery
-	  for half-dead links (especially macOS Connected-but-mute) without a full
-	  Forget + re-pair. Implemented in patches/zmk-ble.patch. Central-only.
-
-config TOTEM_EVICT_ADV_COOLDOWN_MS
-	int "Delay re-advertising after a non-active host disconnects (ms)"
-	depends on TOTEM_ADV_THROTTLE
-	default 0
-	range 0 5000
-	help
-	  When a background (non-active) host disconnects and the active profile is
-	  still not connected, wait this many milliseconds before restarting open
-	  advertising. DEFAULT 0 (off): a non-zero value also blinds the *selected*
-	  host during the pause, which made dual-host switch worse (Win thrash
-	  starved Mac). Keep 0 unless experimenting with a logging build. Profile
-	  switch and active-host disconnect always re-advertise immediately.
-	  Implemented in patches/zmk-ble.patch. Central-only.
-
-config TOTEM_ACTIVE_ADV_FILTER
-	bool "Advertise with filter accept list: only active profile may connect"
-	depends on TOTEM_ADV_THROTTLE
-	depends on BT_FILTER_ACCEPT_LIST
-	default n
-	help
-	  When the active profile is bonded, advertising uses
-	  BT_LE_ADV_OPT_FILTER_CONN and the filter accept list contains only that
-	  profile's peer. Background bonded hosts cannot complete a connection
-	  (stops multi-host thrash that can rot the selected bond). Open/empty
-	  profiles advertise unfiltered for pairing. Setup and filtered-start errors
-	  are retried without falling back to unfiltered advertising. The firmware
-	  verifies the stored peer identity against its bond before configuring the
-	  list. Central-only.
 
 config TOTEM_RECONNECT_WATCH
 	bool "Watchdog for stuck profile-switch reconnects"
@@ -509,94 +461,6 @@ config TOTEM_HOST_EVENT_LOG_SLOTS
 	  With the defaults, the persistent black box retains up to 128 compact
 	  events across the most recent valid blocks.
 
-config TOTEM_ADV_THROTTLE
-	bool "Pause advertising after the selected host has been away for a while"
-	depends on ZMK_BLE
-	default n
-	help
-	  When the selected profile's device has been disconnected for
-	  TOTEM_ADV_THROTTLE_TIMEOUT_MIN minutes, stop advertising to save power. A key
-	  press on either half resumes it (the first press or two may be lost). This also
-	  stops cross-talk -- nothing can connect while not advertising -- so it does not
-	  need address-based filtering. Implemented by patches/zmk-ble.patch on our ZMK
-	  fork. Central-only.
-
-config TOTEM_ADV_THROTTLE_TIMEOUT_MIN
-	int "Minutes the selected host may be away before advertising is paused"
-	depends on TOTEM_ADV_THROTTLE
-	default 5
-
-config TOTEM_ADV_BOOST
-	bool "Faster advertising after profile switch (and wake from dark)"
-	depends on TOTEM_ADV_THROTTLE
-	default y
-	help
-	  For TOTEM_ADV_BOOST_SEC after a profile switch (or keypress resume from
-	  advertising-dark), advertise at Bluetooth GAP "fast interval 1" (30-60 ms)
-	  instead of ZMK's default "fast interval 2" (100-150 ms). Denser advertising
-	  helps the newly selected host discover the keyboard sooner. Implemented in
-	  patches/zmk-ble.patch. Central-only. Small extra radio use only during the
-	  short boost window.
-
-config TOTEM_ADV_BOOST_SEC
-	int "Seconds of dense advertising after profile switch"
-	depends on TOTEM_ADV_BOOST
-	default 12
-	range 3 60
-
-config TOTEM_ADV_POST_SWITCH_DARK
-	bool "After profile-switch boost, go dark if selected host not connected"
-	depends on TOTEM_ADV_BOOST
-	default y
-	help
-	  When the boost window after BT_SEL ends and the selected host is still
-	  not connected, pause advertising until a keypress. Limits open-ad thrash
-	  from background bonded hosts (which can rot the selected bond) without
-	  Filter Accept List. Cost: if the host is slow, press any key to resume
-	  advertising. Implemented in patches/zmk-ble.patch. Central-only.
-
-config TOTEM_DIR_THEN_OPEN
-	bool "Directed advertising then open undirected after profile switch"
-	depends on TOTEM_ADV_THROTTLE
-	default n
-	help
-	  After BT_SEL (exclusive-host still drops the previous host), first
-	  advertise *directed* to the active bonded peer for TOTEM_DIR_ADV_SEC,
-	  then fall back to open undirected (with boost if enabled). Goal: faster
-	  discovery for the selected host without multi-link. Directed may fail
-	  on some privacy centrals — fail-open to undirected immediately.
-	  Implemented in patches/zmk-ble.patch. Central-only.
-
-config TOTEM_DIR_ADV_SEC
-	int "Seconds of directed advertising after profile switch"
-	depends on TOTEM_DIR_THEN_OPEN
-	default 4
-	range 1 15
-	help
-	  Low-duty directed phase length before open undirected. Keep short so
-	  macOS (RPA) still gets undirected boost quickly if directed does not
-	  help.
-
-config TOTEM_IDLE_DISCONNECT
-	bool "Disconnect the active host after a long keypress-idle window (then go dark)"
-	depends on TOTEM_ADV_THROTTLE
-	default n
-	help
-	  On the central half: after CONFIG_TOTEM_IDLE_DISCONNECT_MIN minutes with no
-	  keypress, disconnect the active host AND immediately pause advertising ("go
-	  dark"), so it cannot instantly reconnect and wake the host. A key press resumes
-	  advertising (via the throttle listener) and the host reconnects; an asleep/away
-	  host simply stays gone, so idle drain falls to the throttled rate with no wake
-	  storm. macOS keeps its BLE link alive during sleep, so without this the keyboard
-	  stays connected-idle overnight. Requires TOTEM_ADV_THROTTLE (shares its
-	  advertising-pause machinery). Implemented in patches/zmk-ble.patch on the ZMK
-	  fork, not a standalone module. Central-only.
-
-config TOTEM_IDLE_DISCONNECT_MIN
-	int "Minutes without a keypress before the active host is disconnected"
-	depends on TOTEM_IDLE_DISCONNECT
-	default 20
-
 config TOTEM_RPA_DISCONNECT
 	bool "Find RPA-connected hosts when disconnecting a profile"
 	depends on ZMK_BLE
@@ -616,7 +480,7 @@ config TOTEM_RPA_DISCONNECT
 
 config TOTEM_ADV_RECONCILE
 	bool "Rebuild advertising state from scratch on explicit user intent"
-	depends on TOTEM_ADV_THROTTLE
+	depends on ZMK_BLE_ADV_TIMEOUT
 	default y
 	help
 	  A keypress while the selected host is down, or BT_SEL, means the user wants

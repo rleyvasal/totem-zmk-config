@@ -101,7 +101,7 @@ does now. The tests are Python files that compile a C harness against the real s
 **Every gated PR also adds an "option off" case** that checks the source compiles to upstream
 behavior. The current tests only cover the "on" path.
 
-### P1. Small fixes (no gate): cut 2026-10-16, local branch `p1-small-fixes`, not pushed
+### P1. Small fixes (no gate): merged as rleyvasal/zmk-next#21 (`85e6b607`)
 Six commits on `9036dec4`:
 1. `bd4c932c` Discover only simulator cases in BLE test workflow (`d0a9e378`).
 2. `0f6509ae` Ignore stale BLE connections when checking and using a profile's host (`9c4a396d`, `bdcf24d0`, `d42fe223`).
@@ -119,17 +119,22 @@ Six commits on `9036dec4`:
   Studio over USB and split battery fetching compiles with no warnings in the changed files. Not checked on hardware.
 - Upstream candidates for zmkfirmware too: stale conn, UART TX spin.
 
-### P2. Passkey entry hardening
-- Commits: `bdcf24d0` (passkey part + `pairing_failed`), `ebb7faff`, `01a193c7`, bluetooth.md part of `1011953a`.
-- Kconfig: none new. It is under `ZMK_BLE_PASSKEY_ENTRY` (default n). `select RING_BUFFER` is dropped.
-- Tests: bsim `ble/security/passkey-confirmed-entry` and the `ble/central` passkey handler.
-- Note for users who already have passkey entry on: Enter now requires exactly 6 digits, and Escape cancels.
+### P2. Passkey entry hardening: merged as rleyvasal/zmk-next#26 (`3187bf8d`)
+One commit on zmk-next main `afdec700` (after P4 #25): `010c8dac` Harden BLE passkey entry (`bdcf24d0` passkey part, `ebb7faff`, `01a193c7`).
+- No new Kconfig. Everything is under the existing `ZMK_BLE_PASSKEY_ENTRY` (default n). The `pairing_failed`
+  callback is registered only with that option on, so builds without it are unchanged. `select RING_BUFFER` is dropped.
+- Escape-cancels was already upstream. New: a six-digit buffer, Enter submits only a full passkey, Backspace, a seventh digit
+  ignored, a failed submit kept for retry, and no connection reference leak on a repeated request.
+- Tests: **new** native `ble/passkey_entry` (real key handler). bsim `ble/security/passkey-confirmed-entry` and the
+  test central's `-fixed_passkey`, which run in the BLE test workflow on CI only and were not run locally.
+- Checked: all 12 native tests pass and clang-format is clean. nice_nano + corne_left builds with passkey entry off and on.
+  Not tested on hardware.
 
-### P3. Battery and charging: cut 2026-10-16, local zmk-next branch `p3-battery-charging`, not pushed
-Three commits on zmk-next main `005b28c9`:
-1. `72e28df4` Optionally keep a split peripheral's battery level while disconnected (`a87562a6`).
+### P3. Battery and charging: merged as rleyvasal/zmk-next#23 (`4961a928`)
+Merged as #23 (`4961a928`). Three commits on `62e9fa8a`:
+1. `0333ec86` Optionally keep a split peripheral's battery level while disconnected (`a87562a6`).
    **New** `ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_RETAIN`, default n. When it is off, a disconnect still reports 0.
-2. `df7747a3` Optionally hold the battery level on external power and report charging (`fd192e03`,
+2. `394df7e6` Optionally hold the battery level on external power and report charging (`fd192e03`,
    `455194e8`, `106c7880`, `e1b99c0e`, `ef07c750`, `b7a00d5c`).
    - **New** `ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER`, default n. It gates the cell memory, the `zmk/batt/cell`
      setting, VBUS detection, the charger reading, the estimate, the USB listener and the 1536-byte
@@ -142,7 +147,7 @@ Three commits on zmk-next main `005b28c9`:
      **no `status-gpios`**. The binding and docs say status-pin support has not been verified on hardware.
    - The split central subscribes to the peripheral's 0x2BED and keeps the state for
      `zmk_split_central_get_peripheral_battery_charge_state()`.
-3. `5db4978e` Optionally report the peripheral in the primary Battery Service.
+3. `0c4a315d` Optionally report the peripheral in the primary Battery Service.
    **New** `ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY_SWAP`, default n, one peripheral only.
    - **Found while porting:** zmk-totem's `central_bas_proxy.c` was not generic. It swapped the two
      Battery Services for Mighty Mitts on macOS: the primary BAS reported the right half, and the extra BAS was the left
@@ -165,63 +170,81 @@ Three commits on zmk-next main `005b28c9`:
 - Totem settings to add when it moves to ZMK Next: `CONFIG_ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER=y` (also selected by
   charge status), `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY_SWAP=y` and
   `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_RETAIN=y`.
-- `pre-commit.yml` will conflict with #22 (P7), as P1 did. Keep all the test steps.
 - Any later fix to zmk-totem's battery code, such as the fix-left-battery-reading session's work, must be ported here too.
 
-### P4. Split power
-- Commits: `fc522b17`, `753ade55`.
-- Kconfig: `ZMK_SPLIT_BLE_IDLE_INT` already defaults to 0 (off), and `ZMK_SPLIT_BLE_IDLE_LATENCY` only applies when it is above 0. No change needed.
-- **Dependency:** the switch from idle back to fast drops the link without the Zephyr supervision
-  countdown fix (`rleyvasal/zephyr` `ae038c05`). zmk-next's `app/west.yml` pins zmkfirmware's Zephyr,
-  so the help text must say so. totem-zmk-config keeps its Zephyr override until the fix is upstream.
-- Tests: `split/idle_interval`.
+### P4. Split power: merged as rleyvasal/zmk-next#25 (`afdec700`)
+One commit on zmk-next main `4961a928` (after P3 #23): `274d3058` Optionally slow the split link while the keyboard is idle (`fc522b17`, `753ade55`).
+- Kconfig: `ZMK_SPLIT_BLE_IDLE_INT` defaults to 0 (off). `ZMK_SPLIT_BLE_IDLE_LATENCY` depends on IDLE_INT > 0. All the code,
+  including the activity includes and subscription, is under `#if CONFIG_ZMK_SPLIT_BLE_IDLE_INT > 0`.
+  The help text names the Zephyr supervision-countdown fix (`rleyvasal/zephyr` `ae038c05`).
+- Tests: `split/idle_interval` from zmk-totem (4 cases), plus a new off check. It strips the idle blocks and asserts that no
+  idle code or activity reference remains in central.c. `pre-commit.yml` runs it.
+- Docs: two rows in `split.md`.
+- Checked: all 11 native tests pass and clang-format is clean. Builds passed: nice_nano//zmk + corne_left with
+  the option off (no idle symbols), and xiao_ble//zmk + totem_left with 48 and 4 (idle work present). Not tested on hardware.
 
-### P5. USB and BLE coexistence while cabled
-- Commits: endpoints and ble.c parts of `fd192e03` (including the "always re-evaluate" change in
-  `zmk_endpoint_set_preferred_transport`), `d6bc4563`.
-- Kconfig (new, all default **n**):
-  - `ZMK_USB_NO_BLE_FALLBACK_WHEN_POWERED` (depends on `ZMK_USB && ZMK_BLE`). When on, the keyboard
-    waits for USB HID instead of falling back to BLE. The help text must warn that typing over BLE
-    while charging from a power bank needs `&out OUT_BLE`.
-  - `ZMK_BLE_HOST_ADV_OFF_ON_USB` (depends on `ZMK_USB && ZMK_BLE`). Host advertising stays off while VBUS is present,
-    the profile switch applies 50 ms later instead of on the key path, and re-select is skipped. Keep the
-    current `ZMK_SPLIT_ROLE_CENTRAL` restriction for the first PR, because only split centrals have been tested.
-- Tests: none exist yet. **Write** `endpoints/usb_powered` (transport choice with the option on and off)
-  and `ble/usb_adv` (no advertising while powered when on; unchanged when off).
+### P5. USB and BLE coexistence while cabled: merged as rleyvasal/zmk-next#27 (`653b3c9c`)
+One commit on zmk-next main `3187bf8d` (after P2 #26): `1bfc92f8` Optionally keep keys on USB and stop host advertising while cabled (`fd192e03`, `d6bc4563`).
+- **Written fresh against zmk-next's current ble.c, not cherry-picked.** zmk-totem's version lives inside the P6 advertising
+  worker and the throttle code.
+- **New** `ZMK_USB_NO_BLE_FALLBACK_WHEN_POWERED`, default n, under `if ZMK_USB`, depends on ZMK_BLE. With USB preferred, VBUS
+  present and HID not ready, the endpoint is none instead of BLE. It also re-evaluates when the same transport is selected again.
+- **New** `ZMK_BLE_HOST_ADV_OFF_ON_USB`, default n, under `if ZMK_USB`, depends on ZMK_BLE. `update_advertising()` picks none
+  while VBUS is present, and a listener on `zmk_usb_conn_state_changed` re-runs it. ZMK_USB only exists on a central or a
+  unibody, so split peripherals are unaffected.
+- Left out: Totem's 50 ms profile-switch deferral on USB. It isn't needed with advertising off on USB.
+  The re-select skip and the throttle and boost interplay belong to P6.
+- **For P6:** the advertising worker must keep this check in its target choice, the `adv_target_is_current()` VBUS term in Totem,
+  and keep the USB listener.
+- Tests: **new** native `usb/cabled`. It runs the real `get_selected_transport()` and `update_advertising()` with each option
+  off and on. Docs: two rows in `system.md`.
+- Checked: all 13 native tests pass and clang-format is clean. nice_nano + corne_left builds with the options off (no
+  listener symbol) and both on. Not tested on hardware.
 
-### P6. BLE advertising and multi-host robustness (largest)
-- Commits: `9c4a396d` (minus P1 parts), `d54734f2`, `4d476144`, `25907404` + `429d7242`, the ble.c
-  `zmk_ble_advertising_observed` hook.
-- Split into **P6a** (advertising worker: serialized owner, versioned target, directed advertising
-  with the `DIR_ADDR_RPA` retry, `4d476144`) and **P6b** (policies).
-  P6a changes how advertising runs internally, not what the keyboard does, and is the risky refactor. Review it on its own.
-- Kconfig: rename `TOTEM_*` to `ZMK_BLE_*` in a new `menu "BLE multi-host policies"`, all default
-  **n** or 0, `depends on ZMK_BLE && (!ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL)`:
+### P6. BLE advertising and multi-host: merged as rleyvasal/zmk-next#28 (`3193ba76`)
+Two commits on zmk-next main `653b3c9c` (after P5 #27):
+1. `394673c5` **P6a**, Run BLE advertising as one worker and drop stale targets (`9c4a396d`, `d54734f2`, `d42fe223`).
+   This is not gated: `update_advertising()` runs only on the system work queue, uses a versioned target (profile, address and USB
+   changes), re-checks the target around `bt_le_adv_start()`, and handles `ADV_LINK_COMPLETE` and `ADV_RESTART` requests. It adds
+   RPA-aware `zmk_ble_profile_index()` and `is_conn_active_profile()`, the directed-to-open fallback (directed is still unused by
+   default), and a weak `zmk_ble_advertising_observed()`. Start errors are returned as before.
+   **It was produced mechanically:** zmk-totem's ble.c was evaluated with every policy option set to 0, then hand-trimmed.
+2. `8c2d1d84` **P6b**, Add optional multi-host advertising policies for split centrals (`9c4a396d`, `d54734f2`, `4d476144`,
+   `25907404`, `429d7242`). It adds a new menu, "Multi-host advertising (split central)", `depends on ZMK_SPLIT_ROLE_CENTRAL`, with
+   everything default n or 0:
 
-  | totem-zmk-config today | zmk-next | Totem value |
-  |---|---|---|
-  | `TOTEM_ADV_THROTTLE` + `_TIMEOUT_MIN` | `ZMK_BLE_ADV_IDLE_TIMEOUT_MIN` (0 = off) | 5 |
-  | `TOTEM_ADV_BOOST` + `_SEC` | `ZMK_BLE_ADV_BOOST_SEC` (0 = off) | 20 |
-  | `TOTEM_ADV_POST_SWITCH_DARK` | `ZMK_BLE_ADV_POST_SWITCH_DARK` | n |
-  | `TOTEM_DIR_THEN_OPEN` + `_DIR_ADV_SEC` | `ZMK_BLE_DIRECTED_ADV_SEC` (0 = off) | 0 |
-  | `TOTEM_ACTIVE_ADV_FILTER` | `ZMK_BLE_ADV_FILTER_ACTIVE_PROFILE` (selects `BT_FILTER_ACCEPT_LIST`) | y |
-  | `TOTEM_RESELECT_RECONNECT` | `ZMK_BLE_RESELECT_RECONNECT` | y |
-  | `TOTEM_IDLE_DISCONNECT` + `_MIN` | `ZMK_BLE_IDLE_DISCONNECT_MIN` (0 = off) | 0 |
-  | `TOTEM_EVICT_ADV_COOLDOWN_MS` | `ZMK_BLE_EVICT_ADV_COOLDOWN_MS` | 0 |
-  | `TOTEM_EXCLUSIVE_HOST` / config's `ZMK_EXCLUSIVE_HOST` (handoff part only) | `ZMK_BLE_PROFILE_HANDOFF` | y |
-  | `TOTEM_EXCLUSIVE_DISCONNECT_REASON` | `ZMK_BLE_PROFILE_HANDOFF_DISCONNECT_REASON` (0x13) | 0x13 |
-  | (weak hooks, ungated) | `ZMK_BLE_DIAGNOSTIC_HOOKS` | y |
+   | zmk-totem / totem-zmk-config | zmk-next | Totem value |
+   |---|---|---|
+   | `TOTEM_ADV_THROTTLE` / `_TIMEOUT_MIN` | `ZMK_BLE_ADV_TIMEOUT` / `_MIN` | y / 5 |
+   | `TOTEM_ADV_BOOST` / `_SEC` | `ZMK_BLE_ADV_BOOST` / `_SEC` | y / 20 |
+   | `TOTEM_ADV_POST_SWITCH_DARK` | `ZMK_BLE_ADV_POST_SWITCH_DARK` | n |
+   | `TOTEM_DIR_THEN_OPEN` / `TOTEM_DIR_ADV_SEC` | `ZMK_BLE_DIRECTED_ADV` / `_SEC` | n / 4 |
+   | `TOTEM_ACTIVE_ADV_FILTER` | `ZMK_BLE_ADV_FILTER_ACTIVE_PROFILE` (selects BT_FILTER_ACCEPT_LIST) | y |
+   | `TOTEM_RESELECT_RECONNECT` | `ZMK_BLE_RESELECT_RECONNECT` | y |
+   | `TOTEM_IDLE_DISCONNECT` / `_MIN` | `ZMK_BLE_IDLE_DISCONNECT` / `_MIN` | n |
+   | `TOTEM_EVICT_ADV_COOLDOWN_MS` | `ZMK_BLE_EVICT_ADV_COOLDOWN_MS` | 0 |
+   | `TOTEM_EXCLUSIVE_HOST` (ble.c handoff part) | `ZMK_BLE_PROFILE_HANDOFF` | y |
+   | `TOTEM_EXCLUSIVE_DISCONNECT_REASON` | `ZMK_BLE_PROFILE_HANDOFF_DISCONNECT_REASON` | 0x13 |
+   | (ungated hog.c hooks) | `ZMK_BLE_DIAGNOSTIC_HOOKS` | y |
 
-  Several of these currently need `TOTEM_ADV_THROTTLE`. In zmk-next each option should stand alone,
-  or state its dependency with `depends on`.
-- API renames: `zmk_ble_totem_ads_suppressed` → `zmk_ble_host_adv_suppressed`,
-  `_adv_state` → `zmk_ble_adv_state`, `_adv_boost_rearm` → `zmk_ble_adv_boost_rearm`,
-  `_kick_open_adv` → `zmk_ble_adv_kick`, `_wake_ads` → `zmk_ble_adv_wake`. Keep the old names as
-  `static inline` wrappers in totem-zmk-config, not in zmk-next.
-- Tests: `ble/advertising_owner`, `ble/profile_notifications`, `ble/keyboard_ccc`, plus an off case
-  that checks `update_advertising()` makes the same choices as upstream.
+   - API renames: `zmk_ble_totem_ads_suppressed` → `zmk_ble_host_adv_suppressed`, `_adv_state` → `zmk_ble_adv_state`, `_wake_ads` →
+     `zmk_ble_adv_wake`, `_adv_boost_rearm` → `zmk_ble_adv_boost_rearm`, `_kick_open_adv` → `zmk_ble_adv_kick`.
+   - USB suppression, which was unconditional on a split central in Totem, now follows P5's `ZMK_BLE_HOST_ADV_OFF_ON_USB` (target
+     staleness, handoff skip, keypress and re-select skip, suppressed API).
+   - **Fixed while porting:** Totem's open-advertising macro swallowed start errors ("will retry") even when nothing retries.
+     That now happens only with `ZMK_BLE_ADV_TIMEOUT`; otherwise the error is returned as upstream does.
+- Tests: **new** `ble/advertising_worker`. It covers the real worker with every option off and runs on the P6a and P6b files both.
+  `usb/cabled`'s advertising case moved there. From zmk-totem: `ble/advertising_owner`, `ble/profile_notifications` and
+  `ble/keyboard_ccc`. keyboard_ccc needs `ZEPHYR_BASE` and is skipped in CI. All 17 native tests pass.
+- Builds: P6a alone and the final tree, nice_nano + corne_left with options off, show only the worker symbols. corne_right
+  builds. Totem left builds with Totem's set (timeout, boost 20, filter, re-select, handoff, hooks, both USB options) and with
+  the rest (post-switch dark, directed, idle disconnect, cooldown 200). Not tested on hardware.
+- **totem-zmk-config changes when it moves:** in `totem.conf`, rename to the table above. In `Kconfig`, `TOTEM_EXCLUSIVE_HOST` selects
+  `ZMK_BLE_PROFILE_HANDOFF`, and drop the moved symbols. In `src/`: `reconnect_watch.c` (suppressed, rearm, kick, `ADV_BOOST(_SEC)`),
+  `totem_studio_extras.c` (adv_state), `totem_studio_usb.c` (wake), `exclusive_host.c` (disconnect reason). Then update
+  `verify-zmk-patch.yml`'s symbol list.
 
-### P7. Studio raw frames: cut 2026-10-16, local branch `p7-studio-raw-frames`, not pushed
+### P7. Studio raw frames: merged as rleyvasal/zmk-next#22
 Two commits on `9036dec4`. The branch is independent of P1. The source files merge cleanly. `pre-commit.yml` conflicts, because both add a test step at the same place. Whichever PR lands second keeps both steps.
 1. `37eb6042` Export `zmk_studio_uart_rearm()` for the Studio UART transport (`fd192e03`). It is not
    gated: the helper does nothing unless a module calls it. Totem's `totem_studio_usb.c` calls it.
@@ -265,6 +288,11 @@ Today, nothing else needs to remain a patch.
 - `Kconfig` and `src/`: the Totem modules (journal, watchdog, reconnect watch, exclusive host,
   lazy host, the diagnostic logs). Remove the `TOTEM_*` symbols that moved to zmk-next.
 - The `west.yml` Zephyr override (`ae038c05`) until the supervision fix is upstream.
+
+## Status (2026-10-17)
+All seven themed PRs are merged into zmk-next main (`3193ba76`). totem-zmk-config branch `zmk-next-direct` pins it.
+Builds for left (Studio), right and left logging pass locally. On the left half the options match zmk-totem's behavior
+(see the switch PR). Next: flash, check on hardware, merge, then archive zmk-totem.
 
 ## 5. Retiring zmk-totem
 

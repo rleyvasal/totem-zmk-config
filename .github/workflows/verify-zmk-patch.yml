@@ -1,7 +1,8 @@
 name: Verify ZMK patch symbols
 
-# Fail the build early if west.yml points at a ZMK revision that does not contain
-# our patched throttle / go-dark / boost hooks (wrong fork, unpatched main, etc.).
+# Fail early if config/west.yml points at a ZMK revision without the ZMK Next
+# options and module API this config uses (wrong repository, an older pin, a
+# renamed option), or if config/totem.conf drifts from the validated BLE policy.
 
 on:
   push:
@@ -41,8 +42,14 @@ jobs:
             "CONFIG_TOTEM_EXCLUSIVE_HOST=y" \
             "CONFIG_TOTEM_LAZY_INACTIVE_HOST=n" \
             "CONFIG_TOTEM_EVICT_REQUIRES_BONDED_ACTIVE=y" \
-            "CONFIG_TOTEM_IDLE_DISCONNECT=n" \
-            "CONFIG_TOTEM_ADV_POST_SWITCH_DARK=n" \
+            "CONFIG_ZMK_BLE_IDLE_DISCONNECT=n" \
+            "CONFIG_ZMK_BLE_ADV_POST_SWITCH_DARK=n" \
+            "CONFIG_ZMK_BLE_ADV_TIMEOUT=y" \
+            "CONFIG_ZMK_BLE_ADV_FILTER_ACTIVE_PROFILE=y" \
+            "CONFIG_ZMK_BLE_HOST_ADV_OFF_ON_USB=y" \
+            "CONFIG_ZMK_USB_NO_BLE_FALLBACK_WHEN_POWERED=y" \
+            "CONFIG_ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER=y" \
+            "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY_SWAP=y" \
             "CONFIG_TOTEM_WATCHDOG=n" \
             "CONFIG_TOTEM_HOST_EVENT_LOG=y" \
             "CONFIG_ZMK_SPLIT_BLE_PREF_INT=12" \
@@ -108,44 +115,61 @@ jobs:
 
       - name: Test pinned firmware regressions
         run: |
-          python3 zmk/app/tests/studio/raw_tx/test_raw_tx.py -v
-          python3 zmk/app/tests/ble/active_connection/test_active_connection.py -v
-          python3 zmk/app/tests/ble/profile_notifications/test_profile_notifications.py -v
-          python3 zmk/app/tests/settings/startup/test_settings_loaded.py -v
-          python3 zmk/app/tests/battery/persistence/test_persistence.py -v
+          set -euo pipefail
+          # ZMK Next's native tests (the Python harnesses under app/tests).
+          for test in $(cd zmk && git ls-files 'app/tests/**/test_*.py'); do
+            echo "== $test"
+            python3 "zmk/$test" -v
+          done
 
-      - name: Require patch symbols in app/src/ble.c
+      - name: Require the ZMK Next options and API this config uses
         run: |
           set -euo pipefail
           missing=0
-          # Symbols only present when patches/zmk-ble.patch is applied on the fork.
+          # Kconfig options set in config/totem.conf and the snippets.
           for sym in \
-            adv_throttled \
-            idle_go_dark \
-            idle_disconnect_work \
-            totem_adv_boost_active \
-            CONFIG_TOTEM_IDLE_DISCONNECT \
-            CONFIG_TOTEM_ADV_BOOST \
-            CONFIG_TOTEM_RESELECT_RECONNECT \
-            CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS \
-            open_adv_retry_work \
-            active_profile_conn_foreach \
-            adv_profile_index \
-            totem_prepare_active_fal \
-            BT_LE_ADV_OPT_FILTER_CONN \
-            zmk_ble_totem_ads_suppressed \
-            zmk_ble_totem_adv_boost_rearm \
-            zmk_ble_totem_kick_open_adv
+            ZMK_BLE_ADV_TIMEOUT \
+            ZMK_BLE_ADV_BOOST \
+            ZMK_BLE_ADV_FILTER_ACTIVE_PROFILE \
+            ZMK_BLE_RESELECT_RECONNECT \
+            ZMK_BLE_PROFILE_HANDOFF \
+            ZMK_BLE_DIAGNOSTIC_HOOKS \
+            ZMK_BLE_HOST_ADV_OFF_ON_USB \
+            ZMK_USB_NO_BLE_FALLBACK_WHEN_POWERED \
+            ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER \
+            ZMK_BATTERY_CHARGE_STATUS \
+            ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY_SWAP \
+            ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_RETAIN \
+            ZMK_SPLIT_BLE_IDLE_INT \
+            ZMK_STUDIO_RPC_RAW_FRAMES
           do
-            if ! git -C zmk grep -q "$sym" -- app/src/ble.c; then
-              echo "::error::Missing '${sym}' in app/src/ble.c — fork tip is not our patched ZMK"
+            if ! git -C zmk grep -qE "^(menu)?config ${sym}\$" -- 'app/Kconfig' 'app/src/**/Kconfig'; then
+              echo "::error::Missing Kconfig option ${sym} in the pinned ZMK"
               missing=1
             else
               echo "OK  ${sym}"
             fi
           done
+          # Functions the config's modules call.
+          for fn in \
+            zmk_ble_host_adv_suppressed \
+            zmk_ble_adv_state \
+            zmk_ble_adv_wake \
+            zmk_ble_adv_boost_rearm \
+            zmk_ble_adv_kick \
+            zmk_ble_advertising_observed \
+            zmk_hog_subscription_observed \
+            zmk_studio_uart_rearm \
+            zmk_battery_reported_soc
+          do
+            if ! git -C zmk grep -q "${fn}(" -- app/include; then
+              echo "::error::Missing ${fn}() in the pinned ZMK's headers"
+              missing=1
+            else
+              echo "OK  ${fn}()"
+            fi
+          done
           if [ "$missing" -ne 0 ]; then
-            echo "::error::config/west.yml revision does not include the required BLE hooks. Update rleyvasal/zmk-next and re-pin the SHA."
+            echo "::error::config/west.yml pins a ZMK without what this config needs. Pin a newer rleyvasal/zmk-next commit."
             exit 1
           fi
-          echo "All expected Totem/ZMK patch symbols present."

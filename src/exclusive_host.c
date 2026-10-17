@@ -38,6 +38,13 @@
 #include <zephyr/bluetooth/hci.h>
 
 #include <zmk/ble.h>
+
+/* ZMK Next's handoff reason; 0x13 (remote user terminated) when the handoff is off. */
+#ifdef CONFIG_ZMK_BLE_PROFILE_HANDOFF_DISCONNECT_REASON
+#define EVICT_DISCONNECT_REASON CONFIG_ZMK_BLE_PROFILE_HANDOFF_DISCONNECT_REASON
+#else
+#define EVICT_DISCONNECT_REASON BT_HCI_ERR_REMOTE_USER_TERM_CONN
+#endif
 #include <zmk/event_manager.h>
 #include <zmk/events/ble_active_profile_changed.h>
 
@@ -292,7 +299,7 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
 
     char addr[BT_ADDR_LE_STR_LEN];
     bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-    int err = bt_conn_disconnect(conn, CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON);
+    int err = bt_conn_disconnect(conn, EVICT_DISCONNECT_REASON);
     if (err) {
         TOTEM_BLE_WRN("totem_ble bg_evict_fail addr=%s idx=%d err=%d", addr, idx, err);
         return;
@@ -302,9 +309,9 @@ static void drop_if_non_active_host(struct bt_conn *conn, void *data) {
     thrash_note_bg_evict();
     uint32_t tw = thrash_win_count();
     TOTEM_BLE_INF("totem_ble bg_evict addr=%s idx=%d disc_reason=0x%02x thrash_win=%u", addr, idx,
-            CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON, tw);
+            EVICT_DISCONNECT_REASON, tw);
     totem_host_event_log_record(TOTEM_HEVT_BG_EVICT, (int8_t)idx, (int8_t)active,
-                                CONFIG_TOTEM_EXCLUSIVE_DISCONNECT_REASON, (uint8_t)tw, 0);
+                                EVICT_DISCONNECT_REASON, (uint8_t)tw, 0);
 }
 
 static void exclusive_host_evict_all(bool force) {
