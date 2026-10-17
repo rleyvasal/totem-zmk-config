@@ -106,9 +106,10 @@ nothing, and only power-cycling both halves recovered it.
 - When the active profile is bonded, advertising uses `BT_LE_ADV_OPT_FILTER_CONN`
   and the accept list contains **only** that profile's peer. Background bonded
   hosts cannot complete a connection (primary multi-host thrash isolation).
-  Open/empty profile → unfiltered ads for pairing. Fail-open: FAL setup/start
-  failure → unfiltered open advertising. **Off** after the 2026-07-21 field
-  fail (Mac return broken). Leave `CONFIG_TOTEM_ACTIVE_ADV_FILTER=n`.
+  Open/empty profile → unfiltered ads for pairing. The current pinned `zmk-next`
+  firmware enables filtering and fails closed if filter setup fails. It waits
+  for the previous host to disconnect before advertising to the selected host.
+  The older patch's fail-open behavior is historical, not the current policy.
 
 **Post-evict advertising cooldown** (`CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS`):
 
@@ -126,6 +127,11 @@ nothing, and only power-cycling both halves recovered it.
 - Uses patch helpers: `zmk_ble_totem_ads_suppressed`,
   `zmk_ble_totem_adv_boost_rearm` (densify via stop+restart),
   `zmk_ble_totem_kick_open_adv`.
+
+The current build pins the full custom `rleyvasal/zmk-next` source revision in
+`config/west.yml`; upstream updates merge into that revision to preserve custom
+features. `zmk-ble.patch` is a historical patch reference, not a complete copy of
+the current firmware. The thin-fork instructions below describe the older workflow.
 
 ZMK's build has no patch hook, so the patch is hosted on a thin fork that
 `config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
@@ -184,3 +190,36 @@ If you fixed hunks by hand, regenerate the patch:
 `git -C ~/zmk diff <new-upstream-sha> -- app/src/ble.c > patches/zmk-ble.patch`.
 Then set `config/west.yml` `revision:` to **`$TIP` (full SHA)**, not only the
 branch name, and push the config repo.
+
+# Zephyr patch — controller prepare pipeline (`zephyr-prepare-pipeline.patch`)
+
+Backport of upstream Zephyr `d4d923938c1a` to `subsys/bluetooth/controller/ll_sw/ull.c`
+(tested on ZMK's Zephyr `9df4b12b5`, `v4.1.0+zmk-fixes`). It fixes the prepare
+pipeline for overlapping radio events, the suspected cause of the ~24 h controller
+crash. The left half flashed on 2026-10-14 was built with it applied by hand.
+
+**CI applies it.** `config/west.yml` overrides the `zephyr` project imported from
+ZMK's `app/west.yml` (top-level projects take precedence over imported ones) and
+pins `rleyvasal/zephyr` branch `v4.1.0+zmk-fixes+prepare-pipeline` by full SHA
+(`af2b801f` = `zmkfirmware/zephyr` `v4.1.0+zmk-fixes` at `10ba6d0c` + this patch).
+`10ba6d0c` is two controller commits newer than the tested `9df4b12b5`
+(`lll_conn.c`, `ull_conn.c`); the patched `ull.c` is byte-identical to the one in
+the flashed image. The override repeats ZMK's zephyr `name-blocklist`; keep it in
+sync when ZMK changes it.
+
+When ZMK moves its Zephyr branch, rebuild the fork branch and re-pin:
+
+```sh
+git -C ~/zephyr fetch https://github.com/zmkfirmware/zephyr.git v4.1.0+zmk-fixes
+git -C ~/zephyr checkout -B v4.1.0+zmk-fixes+prepare-pipeline FETCH_HEAD
+git -C ~/zephyr apply ~/totem-zmk-config/patches/zephyr-prepare-pipeline.patch
+git -C ~/zephyr commit -am "Bluetooth: Controller: Fix prepare pipeline for overlapping events"
+git -C ~/zephyr push -f https://github.com/rleyvasal/zephyr.git v4.1.0+zmk-fixes+prepare-pipeline
+```
+
+Then set the `zephyr` `revision:` in `config/west.yml` to the new full SHA. For a
+local workspace that still uses unpatched Zephyr, apply it by hand:
+
+```sh
+git -C <workspace>/zephyr apply ~/totem-zmk-config/patches/zephyr-prepare-pipeline.patch
+```

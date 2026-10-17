@@ -19,6 +19,9 @@ jobs:
       - name: Checkout config
         uses: actions/checkout@v5
 
+      - name: Test diagnostics and BLE recovery
+        run: python3 -m unittest discover -s tests -v
+
       - name: Require validated BLE policy
         shell: bash
         run: |
@@ -41,12 +44,12 @@ jobs:
             "CONFIG_TOTEM_IDLE_DISCONNECT=n" \
             "CONFIG_TOTEM_ADV_POST_SWITCH_DARK=n" \
             "CONFIG_TOTEM_WATCHDOG=n" \
-            "CONFIG_TOTEM_HOST_EVENT_LOG=n" \
+            "CONFIG_TOTEM_HOST_EVENT_LOG=y" \
             "CONFIG_ZMK_SPLIT_BLE_PREF_INT=12" \
             "CONFIG_ZMK_SPLIT_BLE_PREF_TIMEOUT=400" \
             "CONFIG_BT_CTLR_TX_PWR_PLUS_8=y" \
-            "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=n" \
-            "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=n" \
+            "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y" \
+            "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y" \
             "CONFIG_TOTEM_RPA_DISCONNECT=n" \
             "CONFIG_TOTEM_ADV_RECONCILE=n" \
             "CONFIG_TOTEM_RECOVERY_REBOOT=n"
@@ -59,21 +62,57 @@ jobs:
         run: |
           set -euo pipefail
           REV=$(awk '/name: zmk/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
+          REPO_PATH=$(awk '/name: zmk/,/revision:/ { if ($1 == "repo-path:") { print $2; exit } }' config/west.yml)
+          REPO_PATH=${REPO_PATH:-zmk}
           if [ -z "$REV" ]; then
             echo "::error::Could not parse zmk revision from config/west.yml"
             exit 1
           fi
           echo "revision=$REV" >> "$GITHUB_OUTPUT"
-          echo "Tracking ZMK revision: $REV"
+          echo "repository=rleyvasal/$REPO_PATH" >> "$GITHUB_OUTPUT"
+          echo "Tracking rleyvasal/$REPO_PATH revision: $REV"
+
+      - name: Require patched Zephyr prepare pipeline
+        run: |
+          set -euo pipefail
+          # patches/zephyr-prepare-pipeline.patch must be in the pinned zephyr override.
+          ZREV=$(awk '/name: zephyr/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
+          if [ -z "$ZREV" ]; then
+            echo "::error::config/west.yml has no zephyr override; CI would build unpatched Zephyr"
+            exit 1
+          fi
+          curl -fsSL "https://raw.githubusercontent.com/rleyvasal/zephyr/${ZREV}/subsys/bluetooth/controller/ll_sw/ull.c" -o ull.c
+          for sym in param_normal_head_ticks param_normal_next_ticks; do
+            if ! grep -q "$sym" ull.c; then
+              echo "::error::Missing '${sym}' in rleyvasal/zephyr@${ZREV} ull.c — prepare-pipeline patch not applied"
+              exit 1
+            fi
+            echo "OK  ${sym} in rleyvasal/zephyr@${ZREV}"
+          done
 
       - name: Fetch ZMK at pinned revision
         run: |
           set -euo pipefail
           REV="${{ steps.rev.outputs.revision }}"
-          git clone --filter=blob:none --no-checkout https://github.com/rleyvasal/zmk.git zmk
+          REPOSITORY="${{ steps.rev.outputs.repository }}"
+          git clone --filter=blob:none --no-checkout "https://github.com/${REPOSITORY}.git" zmk
           git -C zmk fetch --depth 1 origin "$REV"
           git -C zmk checkout FETCH_HEAD
           git -C zmk rev-parse HEAD
+
+      - name: Require post-settings-load startup hook
+        run: |
+          set -euo pipefail
+          git -C zmk grep -q '^#define ZMK_SETTINGS_LOADED_HOOK_VERSION 1$' -- app/include/zmk/settings.h
+          git -C zmk grep -q 'zmk_settings_loaded();' -- app/src/main.c
+
+      - name: Test pinned firmware regressions
+        run: |
+          python3 zmk/app/tests/studio/raw_tx/test_raw_tx.py -v
+          python3 zmk/app/tests/ble/active_connection/test_active_connection.py -v
+          python3 zmk/app/tests/ble/profile_notifications/test_profile_notifications.py -v
+          python3 zmk/app/tests/settings/startup/test_settings_loaded.py -v
+          python3 zmk/app/tests/battery/persistence/test_persistence.py -v
 
       - name: Require patch symbols in app/src/ble.c
         run: |
@@ -91,6 +130,7 @@ jobs:
             CONFIG_TOTEM_EVICT_ADV_COOLDOWN_MS \
             open_adv_retry_work \
             active_profile_conn_foreach \
+            adv_profile_index \
             totem_prepare_active_fal \
             BT_LE_ADV_OPT_FILTER_CONN \
             zmk_ble_totem_ads_suppressed \
@@ -105,7 +145,7 @@ jobs:
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "::error::config/west.yml revision does not include patches/zmk-ble.patch hooks. Re-apply the patch to rleyvasal/zmk and re-pin the SHA."
+            echo "::error::config/west.yml revision does not include the required BLE hooks. Update rleyvasal/zmk-next and re-pin the SHA."
             exit 1
           fi
           echo "All expected Totem/ZMK patch symbols present."

@@ -19,11 +19,21 @@
 
 #include <totem_fault.h>
 #include <totem_host_event_log.h>
+#include <totem_boot_diagnostics.h>
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
+/* On the Studio image the zmk-studio-log module owns the fatal error handler; its record of the
+ * crash is copied in at boot so the journal and the totem_fault line look the same as before. */
+#include <zmk_studio_log/diag.h>
+#endif
 
 #define TOTEM_FAULT_MAGIC 0x544F4654u /* "TOFT" */
 
 /* __noinit: not zeroed at startup, so it carries across a soft reset. */
 static __noinit struct totem_fault_record fault_rec;
+static struct totem_fault_record last_fault;
+
+const struct totem_fault_record *totem_fault_last_record(void) { return &last_fault; }
 
 /* Everything from `kind` onward; magic and crc are the envelope. */
 #define FAULT_CRC_OFFSET offsetof(struct totem_fault_record, kind)
@@ -80,7 +90,7 @@ void totem_fault_note_task_wdt(int channel_id, const char *label) {
     fault_seal(&fault_rec);
 }
 
-#if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE)
+#if IS_ENABLED(CONFIG_TOTEM_FAULT_CAPTURE) && !IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
 /* Overrides Zephyr's weak default, which would otherwise halt the CPU (or reboot,
  * depending on CONFIG_RESET_ON_FATAL_ERROR) without leaving anything behind. */
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf) {
@@ -114,7 +124,28 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf) 
     sys_reboot(SYS_REBOOT_COLD);
     CODE_UNREACHABLE;
 }
-#endif /* CONFIG_TOTEM_FAULT_CAPTURE */
+#endif /* CONFIG_TOTEM_FAULT_CAPTURE && !CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE */
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
+/* A task watchdog HANG is still noted here directly; a crash comes from the module. */
+static void fault_import_module_crash(void) {
+    struct zmk_studio_log_fault crash;
+
+    if (fault_valid(&fault_rec) || !zmk_studio_log_boot_fault(&crash)) {
+        return;
+    }
+    memset(&fault_rec, 0, sizeof(fault_rec));
+    fault_rec.kind = TOTEM_FAULT_CRASH;
+    fault_rec.channel = -1;
+    fault_rec.reason = (uint16_t)crash.reason;
+    fault_rec.pc = crash.pc;
+    fault_rec.lr = crash.lr;
+    fault_rec.uptime_ms = crash.uptime_ms;
+    fault_rec.thread = crash.thread;
+    strncpy(fault_rec.label, crash.thread_name, sizeof(fault_rec.label) - 1);
+    fault_seal(&fault_rec);
+}
+#endif
 
 static const char *fault_reason_str(uint16_t reason) {
     switch (reason) {
@@ -134,6 +165,17 @@ static const char *fault_reason_str(uint16_t reason) {
 }
 
 void totem_fault_report_and_clear(void) {
+#if defined(CONFIG_ZMK_STUDIO_LOG_FAULT_CAPTURE)
+    fault_import_module_crash();
+#endif
+    uint8_t status = fault_rec.magic == 0 ? 0 :
+                     fault_rec.magic != TOTEM_FAULT_MAGIC ? 1 :
+                     fault_valid(&fault_rec) ? 3 : 2;
+#if IS_ENABLED(CONFIG_TOTEM_HOST_EVENT_LOG)
+    totem_boot_diagnostics_fault_status(status);
+#endif
+    totem_host_event_log_record(TOTEM_HEVT_BOOT_FAULT_STATUS, -1, -1, status,
+                                status == 3 ? fault_rec.kind : 0, 0);
     if (!fault_valid(&fault_rec)) {
         /* Cold boot, or nothing has faulted since the last report. Not an error --
          * say so explicitly, because "no line printed" is otherwise ambiguous with
@@ -142,6 +184,7 @@ void totem_fault_report_and_clear(void) {
         return;
     }
 
+    last_fault = fault_rec;
     switch (fault_rec.kind) {
     case TOTEM_FAULT_CRASH:
         printk("totem_fault CRASH reason=%u(%s) pc=0x%08x lr=0x%08x thread=%s(0x%08x) "
@@ -161,7 +204,6 @@ void totem_fault_report_and_clear(void) {
 
     totem_host_event_log_record(TOTEM_HEVT_FAULT, (int8_t)fault_rec.channel, -1,
                                 (uint8_t)fault_rec.reason, 0, fault_rec.kind);
-    totem_host_event_log_persist();
 
     /* Report exactly once: leaving it valid would make every later boot look like it
      * had just crashed. */

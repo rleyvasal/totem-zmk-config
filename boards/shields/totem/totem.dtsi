@@ -11,6 +11,13 @@
     nfct-pins-as-gpios;
 };
 
+/* The build guide leaves room for a 15 x 22 x 7.5 mm cell; 110 mAh is typical for
+ * that size. Set it to the capacity printed on your cells: ZMK uses it with the
+ * XIAO's 50 mA charge current to estimate the level while charging. */
+&xiao_charger {
+    charge-full-design-microamp-hours = <110000>;
+};
+
 / {
     chosen {
         zmk,kscan = &kscan0;

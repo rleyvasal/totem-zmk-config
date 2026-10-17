@@ -6,3 +6,4 @@ DEBUGGING-NOTES.md
 
 # Editor backup files
 *~
+__pycache__/

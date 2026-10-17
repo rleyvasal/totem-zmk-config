@@ -1,3 +1,37 @@
+# Public names for any ZMK keyboard. TOTEM_* remain valid (Totem.conf uses them).
+# Setting ZMK_* =y turns on the matching TOTEM_* so existing CMake/depends keep working.
+
+config ZMK_EXCLUSIVE_HOST
+	bool "Exclusive host: only the selected BLE profile stays connected"
+	depends on ZMK_BLE
+	default n
+	help
+	  Same feature as TOTEM_EXCLUSIVE_HOST. Use this name on Corne and other
+	  boards; Totem may keep assigning TOTEM_EXCLUSIVE_HOST.
+
+config ZMK_RECONNECT_WATCH
+	bool "Reconnect watch after BT_SEL if the selected host stays down"
+	depends on ZMK_BLE
+	default n
+	help
+	  Same feature as TOTEM_RECONNECT_WATCH.
+
+config ZMK_STUDIO_CONSOLE
+	bool "Mux printk onto the Studio RPC CDC as framed log lines"
+	depends on ZMK_STUDIO
+	select ZMK_STUDIO_LOG
+	default n
+	help
+	  Same feature as TOTEM_STUDIO_CONSOLE. One USB serial port: Studio RPC
+	  plus framed 'L'/'K' payloads for the configurator log panel.
+
+config ZMK_BATTERY_LOG
+	bool "printk both halves' battery (central split only)"
+	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default n
+	help
+	  Same feature as TOTEM_BATTERY_LOG.
+
 config TOTEM_FAULT_CAPTURE
 	bool "Record crashes (reason + faulting PC) across a reset"
 	select THREAD_NAME
@@ -60,7 +94,7 @@ config TOTEM_WATCHDOG_TIMEOUT_MS
 config TOTEM_RESET_REASON_CAPTURE
 	bool "Record why the SoC last reset (power-on, watchdog, brownout, ...)"
 	select HWINFO
-	default y
+	default n
 	help
 	  Read hwinfo_get_reset_cause() once at boot, print it via printk, and store a
 	  TOTEM_HEVT_BOOT record in the host event ring. Without this a watchdog reset
@@ -70,10 +104,20 @@ config TOTEM_RESET_REASON_CAPTURE
 	  Independent of TOTEM_WATCHDOG -- useful even with the watchdog off, since it
 	  also distinguishes brownouts from clean power-ons.
 
+config TOTEM_CONN_PARAMS_LOG
+	bool "printk each connection's interval, latency and timeout when they change"
+	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default n
+	help
+	  Print `totem_ble conn_params` on connect and on every parameter update, for the
+	  split link (role=0) and the host link (role=1). These decide most of the radio
+	  power and were not visible on a production image: this shows the split link's
+	  idle interval taking effect, and what the host actually granted.
+
 config TOTEM_BOOT_PROFILE_DUMP
 	bool "printk each profile's stored host address at boot"
 	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
-	default y
+	default n
 	help
 	  Print `totem_prof <n> <addr>` for every profile at boot, marking the active one
 	  with * and empty slots with EMPTY. This is the single most useful diagnostic we
@@ -102,7 +146,7 @@ config TOTEM_BOOT_PROFILE_DUMP_DELAY_MS
 config TOTEM_ENDPOINT_LOG
 	bool "printk the HID endpoint whenever it changes"
 	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
-	default y
+	default n
 	help
 	  Print `totem_ep changed selected=... preferred=...` on every endpoint change,
 	  plus once at boot. Which transport is carrying keystrokes is otherwise invisible
@@ -121,7 +165,7 @@ config TOTEM_ENDPOINT_LOG
 config TOTEM_BATTERY_LOG
 	bool "printk both halves' battery level with timestamps"
 	depends on ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
-	default y
+	default y if ZMK_BATTERY_LOG
 	help
 	  Print `totem_batt t=<uptime> left=NN%% right=NN%%` on every battery event and on
 	  a periodic tick. Host-side battery UIs cannot be trusted for measurement:
@@ -146,6 +190,18 @@ config TOTEM_BATTERY_LOG_INTERVAL_SEC
 	  long silences. The tick provides regular samples to fit a slope against. 300 s
 	  is ~50 samples across a 4-hour drain and ~575 across two days.
 
+config TOTEM_DIAG_HEARTBEAT_MIN
+	int "Minutes between battery/liveness heartbeats in the diagnostic journal"
+	depends on TOTEM_BATTERY_LOG && TOTEM_HOST_EVENT_LOG
+	default 30
+	range 0 1440
+	help
+	  Record event k=47 (battery mV, SoC, USB, selected profile) into the persistent
+	  journal this often, plus once a minute after boot. Without it, a quiet keyboard
+	  can go hours without a saved event, so the "previous uptime" after an
+	  unexplained reset is only a loose lower bound and a dying battery is invisible.
+	  Each heartbeat requests one coalesced journal write. 0 disables it.
+
 config TOTEM_USB_CONSOLE
 	bool "USB CDC console on production builds (printk only, no log subsystem)"
 	depends on !ZMK_STUDIO
@@ -169,10 +225,32 @@ config TOTEM_USB_CONSOLE
 	  Trade-off: adds a CDC ACM interface to the USB descriptor (the keyboard shows
 	  up as a composite device) and costs a little RAM. Set n if USB HID misbehaves.
 
+config TOTEM_STUDIO_CONSOLE
+	bool "Mux printk onto the Studio RPC CDC as framed log lines"
+	depends on ZMK_STUDIO
+	select ZMK_STUDIO_LOG
+	default y if ZMK_STUDIO_CONSOLE
+	help
+	  One USB serial port. Studio RPC owns the CDC; the zmk-studio-log module
+	  sends printk lines as framed 'L' payloads so the configurator can split
+	  remap traffic from the BLE/host log. Does not enable UART_CONSOLE (that
+	  would interleave with RPC). src/totem_studio_extras.c adds 'K' battery
+	  snapshots, the 'D' journal dump and the 10 s heartbeat.
+
+config TOTEM_USB_QUIET_HOST
+	bool "Drop host BLE while USB is providing HID (keep the split link)"
+	depends on ZMK_USB && ZMK_BLE && ZMK_SPLIT_ROLE_CENTRAL
+	default n
+	help
+	  While the cable is up, stop host advertising and drop Mac/Windows links
+	  once. The split BLE link and USB Studio diagnostics remain available.
+	  Use with the matching BLE patch, which suppresses only host advertising.
+	  Module src/usb_host_quiet.c.
+
 config TOTEM_EXCLUSIVE_HOST
 	bool "Keep only the active profile's computer connected (evict background hosts)"
 	depends on ZMK_BLE
-	default n
+	default y if ZMK_EXCLUSIVE_HOST
 	help
 	  Disconnect any non-active host so only the selected computer stays linked.
 	  Prevents wake/cross-talk and dual-link battery cost, but every BT_SEL pays
@@ -303,19 +381,20 @@ config TOTEM_ACTIVE_ADV_FILTER
 	  BT_LE_ADV_OPT_FILTER_CONN and the filter accept list contains only that
 	  profile's peer. Background bonded hosts cannot complete a connection
 	  (stops multi-host thrash that can rot the selected bond). Open/empty
-	  profiles advertise unfiltered for pairing. Fail-open: any FAL setup or
-	  filtered start failure falls back to unfiltered open advertising.
-	  Earlier 2026-07 attempt: no ads on some builds — re-enabled 2026-07-21
-	  with clearer fallback; set n in totem.conf if ads vanish. Central-only.
+	  profiles advertise unfiltered for pairing. Setup and filtered-start errors
+	  are retried without falling back to unfiltered advertising. The firmware
+	  verifies the stored peer identity against its bond before configuring the
+	  list. Central-only.
 
 config TOTEM_RECONNECT_WATCH
 	bool "Watchdog for stuck profile-switch reconnects"
 	depends on ZMK_BLE
-	default y
+	default y if ZMK_RECONNECT_WATCH
 	help
 	  After BT_SEL, if the active bonded host does not come up, run a recovery
-	  ladder: kick advertising, force-evict background hosts, then soft-drop a
-	  zombie host conn. Never clears bonds. Module src/reconnect_watch.c.
+	  ladder: kick advertising, force-evict background hosts, then verify the
+	  connection table without dropping an active-profile connection. Never
+	  clears bonds. Module src/reconnect_watch.c.
 	  Central-only.
 
 config TOTEM_RECONNECT_WATCH_SEC
@@ -331,7 +410,8 @@ config TOTEM_RECONNECT_WATCH_ON_ACTIVE_DOWN
 	help
 	  When a peer that maps to the active profile disconnects (not background
 	  thrash, not unresolved RPA), arm the light recovery ladder: densify ads /
-	  kick open advertising, force-evict background hosts, soft-drop zombie.
+	  kick open advertising, force-evict background hosts, then verify the
+	  connection table without dropping an active-profile connection.
 	  Never full reselect (avoids Class D mute risk). Skips when advertising is
 	  intentionally suppressed (idle go-dark / throttle). Central-only.
 
@@ -351,16 +431,39 @@ config TOTEM_THRASH_WINDOW_SEC
 	default 10
 	range 3 60
 
+config TOTEM_BG_EVICT_IGNORE_MS
+	int "Ignore a background profile after one evict (milliseconds)"
+	depends on TOTEM_EXCLUSIVE_HOST
+	default 10000
+	range 0 60000
+	help
+	  After kicking a non-active host, do not kick that profile again for
+	  this long. Stops the Hz-rate Windows flap while profile 0 is selected
+	  and Mac is down. 0 = old evict-on-every-connect. Profile switch still
+	  evicts immediately.
+
+config TOTEM_BG_EVICT_CAP
+	int "Stop background evicts after this many in the thrash window"
+	depends on TOTEM_EXCLUSIVE_HOST && TOTEM_THRASH_DETECT
+	default 4
+	range 1 16
+	help
+	  If exclusive-host has already kicked this many background hosts in
+	  TOTEM_THRASH_WINDOW_SEC, leave the extra link up and printk
+	  totem_ble thrash_cap. A quiet extra Windows connection is better than
+	  a connect/evict storm that stalls USB HID.
+
 config TOTEM_HOST_EVENT_LOG
-	bool "Multi-profile host event ring (RAM + settings) with USB dump"
+	bool "Persistent diagnostic black box (RAM ring + rotating journal)"
 	depends on ZMK_BLE
 	default y
 	help
-	  Record connect/disconnect/security/thrash/watch events for any BLE
-	  profile index into a circular ring. Persist snapshots to settings so
-	  history survives reboot and firmware flash (without settings-reset).
-	  Dump with &host_log_dump (combo) via printk over USB CDC when console
-	  logging is enabled (zmk-usb-logging snippet or CONFIG_ZMK_USB_LOGGING).
+	  Record USB, advertising, BLE host, split, recovery and fault transitions
+	  into a RAM ring. Periodically persist compact batches into a rotating,
+	  CRC-checked settings journal so the most recent records survive a reset.
+	  Dump with &host_log_dump (combo) over USB CDC. On the Studio image,
+	  numbered framed lines and an end marker allow a host to verify a full
+	  dump. The zmk-usb-logging image uses printk instead.
 	  Capture works on the normal production image without USB attached.
 	  Implemented in src/host_event_log.c. Central sources; dump on left.
 
@@ -368,15 +471,15 @@ config TOTEM_HOST_EVENT_LOG_SIZE
 	int "Host event ring capacity"
 	depends on TOTEM_HOST_EVENT_LOG
 	default 128
-	range 32 256
+	range 32 1024
 
 config TOTEM_HOST_EVENT_LOG_PERSIST_EVERY
-	int "Persist ring to settings after this many new events"
+	int "Persist a journal block after this many new events"
 	depends on TOTEM_HOST_EVENT_LOG
 	default 32
 	range 1 128
 	help
-	  Count threshold before a flash snapshot is *requested*. Actual writes
+	  Count threshold before a journal write is *requested*. Actual writes
 	  are also rate-limited by TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS so thrash
 	  storms cannot spam NVS (which can hang the central / kill USB+BLE).
 
@@ -386,9 +489,25 @@ config TOTEM_HOST_EVENT_LOG_PERSIST_MIN_MS
 	default 60000
 	range 5000 600000
 	help
-	  Coalesce settings writes during dual-host thrash. RAM ring still
-	  records every event; only NVS is throttled. Dump still requests a
-	  persist (subject to this interval).
+	  Coalesce journal writes during dual-host thrash. RAM ring still records
+	  every event; only NVS is throttled. A dump includes the current RAM ring
+	  without forcing a synchronous flash write.
+
+config TOTEM_HOST_EVENT_LOG_BLOCK_SIZE
+	int "Events per persistent journal block"
+	depends on TOTEM_HOST_EVENT_LOG
+	default 16
+	range 8 32
+
+config TOTEM_HOST_EVENT_LOG_SLOTS
+	int "Persistent journal block count"
+	depends on TOTEM_HOST_EVENT_LOG
+	default 8
+	range 4 8
+	help
+	  Journal blocks rotate rather than overwriting a single settings key.
+	  With the defaults, the persistent black box retains up to 128 compact
+	  events across the most recent valid blocks.
 
 config TOTEM_ADV_THROTTLE
 	bool "Pause advertising after the selected host has been away for a while"

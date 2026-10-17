@@ -1,0 +1,8 @@
+# Example GitHub firmware build. Snippet is generic (not Totem/XIAO).
+include:
+  - board: nice_nano_v2
+    shield: corne_left
+    snippet: zmk-studio-one-cdc
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DCONFIG_ZMK_RUNTIME_CONFIG=y
+  - board: nice_nano_v2
+    shield: corne_right

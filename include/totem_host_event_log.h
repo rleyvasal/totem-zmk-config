@@ -37,6 +37,110 @@ enum totem_host_evt {
     /* Post-mortem from the previous boot (see totem_fault.h). `idx` is the task
      * watchdog channel or -1, `reason` the K_ERR_* code, `extra` the fault kind. */
     TOTEM_HEVT_FAULT = 15,
+    /* USB/HID state transition. reason is the USB event state; extra is the
+     * selected transport (or a compact endpoint state). */
+    TOTEM_HEVT_USB = 16,
+    /* Host advertising intent/result. reason is the requested advertising
+     * state; extra is a compact reason or error code. */
+    TOTEM_HEVT_ADV = 17,
+    /* Split central-to-peripheral link transition. reason is the HCI reason
+     * or security error; extra carries role/security state. */
+    TOTEM_HEVT_SPLIT = 18,
+    /* A coalesced repeat count; reason identifies the underlying event and
+     * extra is the number of suppressed repeats. */
+    TOTEM_HEVT_REPEAT = 19,
+    TOTEM_HEVT_HID_SUBSCRIBED = 20,
+    /* First send attempt; extra=1 if keyboard notifications are subscribed. */
+    TOTEM_HEVT_HID_FIRST_ATTEMPT = 21,
+    /* extra=0: local send completion; extra=1: send failed, reason=positive errno. */
+    TOTEM_HEVT_HID_TX_RESULT = 22,
+    /* reason=zmk_ble_adv_stage; thrash_win=0 success, 1 POSIX, 2 HCI;
+     * extra=absolute API result. No journal format change. */
+    TOTEM_HEVT_ADV_RESULT = 23,
+    /* First local security API call: reason=requested level/flags,
+     * extra=current level at entry. Not proof an SMP packet was sent. */
+    TOTEM_HEVT_SEC_REQUEST = 24,
+    /* Its return: reason=requested level/flags; w=0 success, 1 POSIX, 2 HCI;
+     * extra=absolute result. Security completion remains event 4/5. */
+    TOTEM_HEVT_SEC_REQUEST_RESULT = 25,
+    /* Settings write entry/return: reason=key category (1 journal, 2 profile
+     * selection, 3 profile data, 4 bonds, 5 other); w=pair ID; end extra=errno.
+     * Original timestamps are retained; these records never request a save. */
+    TOTEM_HEVT_FLASH_BEGIN = 26,
+    TOTEM_HEVT_FLASH_END = 27,
+    /* Controller->host disconnect event before host cleanup/callbacks.
+     * idx/active carry the low/high handle bytes, reason=HCI reason,
+     * w=HCI status, extra=selected profile. Not an over-the-air timestamp. */
+    TOTEM_HEVT_HCI_DISC = 28,
+    /* Connection handle mapping: idx=profile, active=selection,
+     * reason/extra=low/high handle bytes. */
+    TOTEM_HEVT_CONN_HANDLE = 29,
+    /* Timing inbox overflow: reason=number of dropped records (up to 255). */
+    TOTEM_HEVT_TIMING_DROPPED = 30,
+    /* Coalesced HID pipeline count: idx=observed profile; reason=stage;
+     * w/extra=low/high cumulative count (16-bit, wraps, resets on boot).
+     * Timestamp is the latest observation, not the summary flush time. */
+    TOTEM_HEVT_HID_COUNT = 31,
+    /* Same profile/stage, w=last positive errno, extra=0. No key identity. */
+    TOTEM_HEVT_HID_ERROR = 32,
+    /* Handoff-only controller diagnostics. i/a always contain handle low/high.
+     * Parameters: r=0 interval (1.25 ms), 1 latency, 2 timeout (10 ms); w/x=value.
+     * Termination: r=0 request (x=reason), 1 API return (w=error class,x=result),
+     * 2 control PDU queued (not necessarily transmitted), 3 link-layer ACK.
+     * 4 confirmed local termination timer expiry (w=0,x=controller reason).
+     * Radio summary: r=0 completed events, 1 no valid CRC/non-aborted packet,
+     * 2 aborted events, 3 skipped events; w/x=saturating 16-bit count.
+     * r=4 last valid RX before request, 5 last valid RX at disconnect:
+     * t=that event's captured time, x=1 known or 0 unknown (t=snapshot time).
+     * r=6 first event without valid RX during handoff, x=aborted flag.
+     * r=7 completed RX packets (trx_cnt sum, not TX/ACK count),
+     * 8 non-aborted events with no RX, 9 non-aborted received-but-invalid events,
+     * 10/11 events reporting MIC pass/fail; all w/x=saturating 16-bit counts.
+     * MIC counts are event summaries, not per-packet; none is not failure. */
+    TOTEM_HEVT_HANDOFF_PARAM = 33,
+    TOTEM_HEVT_HANDOFF_TERM = 34,
+    TOTEM_HEVT_HANDOFF_RADIO = 35,
+    /* Encryption event received at host RX queue/removed for processing.
+     * i/a=handle low/high, r=0 queued, 1 dequeued; 2/3 for key refresh.
+     * w=HCI status, x=encryption enabled byte (255 for key refresh).
+     * Includes split events without doing a connection lookup in the RX path. */
+    TOTEM_HEVT_ENCRYPT_EVENT = 36,
+    /* LE host security processing: i/a=handle low/high, r=0 entry,
+     * 1 after L2CAP encryption callbacks, 2 return; w=HCI status,
+     * x=security level at this boundary. Event 4/5 is application observation. */
+    TOTEM_HEVT_SECURITY_TIMING = 37,
+    /* Security exchange: i/a=handle low/high. r=0 SMP request submission,
+     * 1 submission return (w=error class,x=absolute result),
+     * 2 controller RX / 3 TX queued (w=LL opcode),
+     * 4 key reply entry / 5 return (w=HCI result,x=1 positive/0 negative),
+     * 6/7 host LTK request arrival/dequeue. No key or payload retained. */
+    TOTEM_HEVT_SECURITY_EXCHANGE = 38,
+    /* nRF52840 handoff-only termination TX: i/a=handle low/high.
+     * r=0 radio packet setups, 1 observed hardware TX ENDs, 2 setups without END;
+     * w/x=saturating 16-bit count. r=3 first setup, 4 first END, 5 last END:
+     * t=captured uptime, x=1 known or 0 unknown (snapshot timestamp instead).
+     * Setup is not transmission; END is not proof of reception or ACK.
+     * Repeated ENDs describe retransmissions of this termination procedure. */
+    TOTEM_HEVT_HANDOFF_TX = 39,
+    /* Boot-only diagnostics. 40/41/43/44 pack a uint32 little-endian in
+     * unsigned i/a/w/x: raw RESETREAS, hwinfo result, boot counter, previous
+     * saved uptime. r on 40 indicates raw capture availability.
+     * 42: r=0 absent, 1 bad magic, 2 bad CRC, 3 valid fault; w=fault kind.
+     * 45: i=previous saved profile, a=previous saved endpoint (-1 unknown).
+     * 46: r=1 retained boot marker survived, 0 absent/corrupt. These markers
+     * cannot distinguish power loss from bootloader RAM/reset-flag clearing. */
+    TOTEM_HEVT_BOOT_RAW = 40,
+    TOTEM_HEVT_BOOT_READ_RESULT = 41,
+    TOTEM_HEVT_BOOT_FAULT_STATUS = 42,
+    TOTEM_HEVT_BOOT_COUNTER = 43,
+    TOTEM_HEVT_BOOT_PREVIOUS_UPTIME = 44,
+    TOTEM_HEVT_BOOT_PREVIOUS_STATE = 45,
+    TOTEM_HEVT_BOOT_RAM_STATUS = 46,
+    /* Low-rate liveness + power sample, so an unexplained reset is bounded in time
+     * and a sagging battery is visible. i=selected profile, a=right SoC (-1
+     * unknown), r=left SoC, w/x=low/high bytes of a uint16: bits 0..14 battery mV,
+     * bit 15 USB powered. One per CONFIG_TOTEM_DIAG_HEARTBEAT_MIN; never per key. */
+    TOTEM_HEVT_HEARTBEAT = 47,
 };
 
 /**
@@ -52,11 +156,24 @@ enum totem_host_evt {
 void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
                                  uint8_t thrash_win, uint8_t extra);
 
-/** Print ring oldest→newest via printk (USB CDC when logging / console enabled). */
+/** Append a captured timestamp from a worker, without scheduling persistence. */
+void totem_host_event_log_record_timing(uint32_t uptime_ms, uint8_t type, int8_t idx,
+                                       int8_t active, uint8_t reason, uint8_t pair, uint8_t extra);
+
+/** Stream a numbered journal/RAM snapshot (framed Studio CDC or plain printk). */
 void totem_host_event_log_dump(void);
 
-/** Force-save ring to settings now (also done periodically). */
+/** Queue a dump from a transport/control callback; never prints inline there. */
+void totem_host_event_log_request_dump(void);
+
+/** Request an immediate settings save, subject to the flash rate limit. */
 void totem_host_event_log_persist(void);
+
+/** Record a non-host diagnostic transition using the shared compact schema. */
+static inline void totem_diag_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
+                                         uint8_t extra) {
+    totem_host_event_log_record(type, idx, active, reason, 0, extra);
+}
 #else
 static inline void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t active,
                                                uint8_t reason, uint8_t thrash_win, uint8_t extra) {
@@ -68,7 +185,16 @@ static inline void totem_host_event_log_record(uint8_t type, int8_t idx, int8_t 
     (void)extra;
 }
 static inline void totem_host_event_log_dump(void) {}
+static inline void totem_host_event_log_request_dump(void) {}
 static inline void totem_host_event_log_persist(void) {}
+static inline void totem_diag_log_record(uint8_t type, int8_t idx, int8_t active, uint8_t reason,
+                                         uint8_t extra) {
+    (void)type;
+    (void)idx;
+    (void)active;
+    (void)reason;
+    (void)extra;
+}
 #endif
 
 #ifdef __cplusplus

@@ -9,11 +9,65 @@ manifest:
   projects:
     - name: zmk
       remote: fork
-      # Official ZMK + patches/zmk-ble.patch (throttle, idle go-dark, adv boost).
-      # Branch: zmk-optimized-484a054. This SHA is the 2026-08-15 validated week.
-      # Do not move to 5606801c (RPA disconnect / reconcile / recovery reboot)
-      # without a dedicated Mac↔Win + split-link A/B. Bumps: zmk-bump.yml
-      revision: 074df9b70720de69c8f961fc8977bd5716adbf03
+      repo-path: zmk-totem
+      # zmk-next-logs-batt: USB HID must not fall back to BLE, last-cell battery.
+      # totem-studio-log (31be6fd): Studio raw frames from zmk-studio-log's
+      # patches/0001-studio-raw-frames.patch replace the fork's own log hooks.
+      # Must match this config branch or the left image fails to link
+      # (zmk_battery_last_cell_soc, zmk_rpc_send_raw_frame, …).
+      # a87562a6: preserve the last valid right-half battery reading across a
+      # split disconnect; a fresh GATT read replaces it after reconnection.
+      # 6848616d / d42fe223: nonblocking diagnostics and stale BLE connection checks.
+      # 455194e8: finish settings loading before journal writes; offload battery saves.
+      # 4d476144: link notifications do not restart profile-switch advertising.
+      # d54734f2: serialized advertising and tested disconnect-before-advertise handoff.
+      # 25907404: retain Zephyr's managed CCC persistence with subscription diagnostics.
+      # right-charge-state (e1b99c0): CONFIG_ZMK_BATTERY_CHARGE_STATUS, the right
+      # half's charge state over 0x2BED; 106c788: no charge-voltage cell level
+      # remembered when booting on USB.
+      # split-idle-interval (753ade5): CONFIG_ZMK_SPLIT_BLE_IDLE_INT / _IDLE_LATENCY,
+      # the split link at 60 ms / latency 4 while idle, 15 ms on the first key.
+      # battery-charge-state (ef07c75, b7a00d5): zmk,battery-charger (charging,
+      # full, estimated level while charging), settle after unplug.
+      revision: b7a00d5c4f1f6d527d62f01dd90b9bdf6f29c8a2
       import: app/west.yml
+    # Studio log stream, reset reason, crash capture and log history across
+    # restarts for the left Studio image (see snippets/totem-studio-rpc).
+    - name: zmk-studio-log
+      remote: fork
+      # battery-snapshots (531e4e7): the 'K' battery line and 'G' '1' requests.
+      revision: 531e4e7ce884cafa16bc73e80f53cf9d556290b7
+    # Overrides the zephyr project imported from zmk's app/west.yml: projects in
+    # this top-level manifest take precedence over imported ones of the same name.
+    # Branch v4.1.0+zmk-fixes+prepare-pipeline = zmkfirmware v4.1.0+zmk-fixes
+    # (10ba6d0c) + patches/zephyr-prepare-pipeline.patch (upstream d4d923938c1a).
+    # Branch v4.1.0+zmk-fixes+supervision-reset (ae038c05) adds on top: the
+    # controller restarts the supervision countdown at every connection update
+    # instant. Without it, switching the split link from the idle 60 ms back to
+    # 15 ms dropped it about 1 s later (a 4 s countdown kept in 60 ms events).
+    # Keep the name-blocklist in sync with zmk's app/west.yml.
+    - name: zephyr
+      remote: fork
+      revision: ae038c052f6df868c1387f0b38a0940ac3476eb1
+      clone-depth: 1
+      import:
+        name-blocklist:
+          - ci-tools
+          - hal_altera
+          - hal_cypress
+          - hal_infineon
+          - hal_microchip
+          - hal_nxp
+          - hal_openisa
+          - hal_xtensa
+          - hal_st
+          - hal_ti
+          - loramac-node
+          - mcuboot
+          - mcumgr
+          - net-tools
+          - openthread
+          - edtt
+          - trusted-firmware-m
   self:
     path: config
