@@ -34,26 +34,15 @@ env:
   NEXT_REPO: rleyvasal/zmk-next
   FORK_REPO: rleyvasal/zmk-totem
   FORK_BRANCH: totem
-  # Branch that carries the ZMK Next work until it merges into main. Once
-  # main's west.yml points at zmk-totem, main is used instead.
-  WORK_BRANCH: persistent-diagnostic-log
 
 jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
+      # main is the daily driver and pins zmk-totem; the bump PR targets it.
       - name: Pick the config branch
         id: base
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if gh api "repos/${GITHUB_REPOSITORY}/contents/config/west.yml?ref=main" --jq .content \
-              | base64 -d | grep -q 'repo-path: zmk-totem'; then
-            echo "branch=main" >> "$GITHUB_OUTPUT"
-          else
-            echo "branch=$WORK_BRANCH" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "branch=main" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v5
         with:
