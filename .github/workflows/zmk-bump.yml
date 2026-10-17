@@ -15,9 +15,14 @@ name: Bump ZMK
 # files can be pushed).
 
 on:
-  schedule:
-    # ZMK Next's own sync runs at 06:17 UTC on Mondays.
-    - cron: "0 9 * * 1"
+  # Paused while zmk-totem's patches move into ZMK Next as themed PRs
+  # (docs/zmk-next-upstreaming-plan.md). Each one that lands conflicts with
+  # zmk-totem's own copy of the same change, so weekly merges would only file
+  # conflict issues. Restore the schedule, rewritten to move a ZMK Next pin,
+  # once this config pins ZMK Next directly.
+  # schedule:
+  #   # ZMK Next's own sync runs at 06:17 UTC on Mondays.
+  #   - cron: "0 9 * * 1"
   workflow_dispatch:
 
 permissions:
