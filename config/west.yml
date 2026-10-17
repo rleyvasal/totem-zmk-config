@@ -27,9 +27,10 @@ manifest:
       # remembered when booting on USB.
       # split-idle-interval (753ade5): CONFIG_ZMK_SPLIT_BLE_IDLE_INT / _IDLE_LATENCY,
       # the split link at 60 ms / latency 4 while idle, 15 ms on the first key.
-      # battery-charge-state (ef07c75, b7a00d5): zmk,battery-charger (charging,
-      # full, estimated level while charging), settle after unplug.
-      revision: b7a00d5c4f1f6d527d62f01dd90b9bdf6f29c8a2
+      # battery-charge-state (ef07c75, b7a00d5, e6d0abd): zmk,battery-charger
+      # (charging, estimated level while charging), settle after unplug. The XIAO
+      # node has no status pin: P0.17 read "not charging" while the cell charged.
+      revision: e6d0abd09a4d25e31bb8257214333dac0d9a2248
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
