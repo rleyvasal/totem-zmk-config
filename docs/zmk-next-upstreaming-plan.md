@@ -125,33 +125,48 @@ Six commits on `9036dec4`:
 - Tests: bsim `ble/security/passkey-confirmed-entry` and the `ble/central` passkey handler.
 - Note for users who already have passkey entry on: Enter now requires exactly 6 digits, and Escape cancels.
 
-### P3. Battery and charging
-- Commits: battery/BAS-proxy parts of `fd192e03`, battery part of `455194e8`, `106c7880`, `a87562a6`,
-  `e1b99c0e`, `ef07c750`, `b7a00d5c`, battery.c part of `1011953a`.
-- Kconfig (new or changed):
-  - **New** `ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER` (bool, default **n**, depends on
-    `ZMK_BATTERY_REPORTING`). It gates the last-cell memory, the `zmk/batt/cell` setting, the VBUS
-    hold, the charger reading and the estimate. When off, battery.c must report live readings exactly as today.
-  - `ZMK_BATTERY_SETTLE_AFTER_CHARGE_SEC` (default 0) becomes `depends on ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER`.
-  - `ZMK_BATTERY_CHARGE_STATUS` stays default n, and should `imply` the hold option.
-  - `ZMK_BATTERY_CHARGE_STATE_API` is now `def_bool y`. Change it to
-    `def_bool ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER`, or keep it y only if `zmk_battery_reported_soc()`
-    and `zmk_battery_charge_state()` exist (returning live SOC / unknown) when the feature is off.
-    zmk-studio-log checks this symbol.
-  - `ZMK_LOW_PRIORITY_THREAD_STACK_SIZE`: change the `default 1536 if …` condition to
-    `if ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER && SETTINGS`.
-  - **New** `ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_RETAIN` (default **n**) for `a87562a6`. When off,
-    a disconnect still reports 0.
-  - `xiao_ble_zmk.dts` keeps the `xiao_charger` node **without `status-gpios`**, only
-    `charge-current-microamp = <50000>`. On the user's XIAO nRF52840 Sense, P0.17 read "not charging"
-    (with `GPIO_ACTIVE_LOW | GPIO_PULL_UP`) while the cell charged from 4029 to 4213 mV on USB. So the earlier
-    "full" readings were misreads, and the estimate never ran. The fix to zmk-totem's board file comes on top of
-    `b7a00d5`; port that version.
-  - `status-gpios` support in `zmk,battery-charger` stays in the binding, but only native tests cover it,
-    never real hardware. Say so in the binding description and the PR.
-- Tests: `battery/persistence`, `battery/usb_boot`, `battery/charge_status`, `battery/charge_tracking`,
-  plus a new off case (live SOC on VBUS, no settings write).
-- Docs: `docs/docs/config/battery.md` rows for the new options and the binding.
+### P3. Battery and charging: cut 2026-10-16, local zmk-next branch `p3-battery-charging`, not pushed
+Three commits on zmk-next main `005b28c9`:
+1. `72e28df4` Optionally keep a split peripheral's battery level while disconnected (`a87562a6`).
+   **New** `ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_RETAIN`, default n. When it is off, a disconnect still reports 0.
+2. `df7747a3` Optionally hold the battery level on external power and report charging (`fd192e03`,
+   `455194e8`, `106c7880`, `e1b99c0e`, `ef07c750`, `b7a00d5c`).
+   - **New** `ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER`, default n. It gates the cell memory, the `zmk/batt/cell`
+     setting, VBUS detection, the charger reading, the estimate, the USB listener and the 1536-byte
+     low-priority stack. When it is off, battery.c behaves as upstream: live levels, no settings writes.
+   - `ZMK_BATTERY_CHARGE_STATUS`, default n, now **selects** the hold, because charge state tracking lives there.
+     `ZMK_BATTERY_SETTLE_AFTER_CHARGE_SEC` depends on the hold.
+   - `ZMK_BATTERY_CHARGE_STATE_API` stays `def_bool y`. The four functions always exist; with the hold off
+     they return the live level, "discharging", -1 and the millivolts.
+   - `zmk,battery-charger` binding. The XIAO board node has `charge-current-microamp = <50000>` and
+     **no `status-gpios`**. The binding and docs say status-pin support has not been verified on hardware.
+   - The split central subscribes to the peripheral's 0x2BED and keeps the state for
+     `zmk_split_central_get_peripheral_battery_charge_state()`.
+3. `5db4978e` Optionally report the peripheral in the primary Battery Service.
+   **New** `ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY_SWAP`, default n, one peripheral only.
+   - **Found while porting:** zmk-totem's `central_bas_proxy.c` was not generic. It swapped the two
+     Battery Services for Mighty Mitts on macOS: the primary BAS reported the right half, and the extra BAS was the left
+     half, labeled "Left"/"main", with notifications rate-limited to one per second. It also ignored peripheral indices.
+   - That layout is now this option. With the option off, the proxy and battery.c's primary-BAS writes are upstream's.
+     Totem needs it on.
+- Tests: `battery/persistence`, `battery/usb_boot`, `battery/charge_status`, `battery/charge_tracking` (from
+  zmk-totem; persistence and charge_status now define the hold option). Also a new `battery/hold_off`, which compiles the
+  real battery.c with the hold off and with settings and USB enabled but not mocked. It checks live levels and
+  BAS writes, that no event fires on an unchanged reading, and that sampling stops when idle. With the hold on, the same harness fails to build.
+  `pre-commit.yml` runs all five.
+- Docs: rows in `battery.md` (three options, the chosen node, the binding note) and `split.md` (swap, retain).
+- Checked on the final tree: all 9 native tests pass and clang-format is clean. Builds passed:
+  - nice_nano//zmk + corne_left with fetching and the proxy, options off: no hold, BLS or swap symbols, stack 768.
+  - corne_right, options off.
+  - xiao_ble//zmk + totem_left with hold, charge status, settle 300, fetching, proxy, swap and retain on, using
+    the shield from totem-zmk-config with its 110 mAh capacity.
+  - totem_right with hold and charge status.
+  Only the final tree was built, not the two intermediate commits. Not tested on hardware.
+- Totem settings to add when it moves to ZMK Next: `CONFIG_ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER=y` (also selected by
+  charge status), `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY_SWAP=y` and
+  `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_RETAIN=y`.
+- `pre-commit.yml` will conflict with #22 (P7), as P1 did. Keep all the test steps.
+- Any later fix to zmk-totem's battery code, such as the fix-left-battery-reading session's work, must be ported here too.
 
 ### P4. Split power
 - Commits: `fc522b17`, `753ade55`.
@@ -207,7 +222,7 @@ Six commits on `9036dec4`:
   that checks `update_advertising()` makes the same choices as upstream.
 
 ### P7. Studio raw frames: cut 2026-10-16, local branch `p7-studio-raw-frames`, not pushed
-Two commits on `9036dec4`. The branch is independent of P1, and the two merge without conflicts.
+Two commits on `9036dec4`. The branch is independent of P1. The source files merge cleanly. `pre-commit.yml` conflicts, because both add a test step at the same place. Whichever PR lands second keeps both steps.
 1. `37eb6042` Export `zmk_studio_uart_rearm()` for the Studio UART transport (`fd192e03`). It is not
    gated: the helper does nothing unless a module calls it. Totem's `totem_studio_usb.c` calls it.
 2. `3640a015` Add Studio raw frames for modules behind `ZMK_STUDIO_RPC_RAW_FRAMES` (`dfdcdef3`,
@@ -242,6 +257,7 @@ Today, nothing else needs to remain a patch.
 
 - `config/totem.conf`: the values in the P6 table, `ZMK_SPLIT_BLE_IDLE_INT=48`,
   `ZMK_SPLIT_BLE_IDLE_LATENCY=4`, `ZMK_BATTERY_CHARGE_STATUS=y`, `ZMK_BATTERY_HOLD_ON_EXTERNAL_POWER=y`,
+  `ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY_SWAP=y`,
   `ZMK_BATTERY_SETTLE_AFTER_CHARGE_SEC=300`, `ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_RETAIN=y`,
   `ZMK_USB_NO_BLE_FALLBACK_WHEN_POWERED=y`, `ZMK_BLE_HOST_ADV_OFF_ON_USB=y`, and
   `ZMK_BLE_DIAGNOSTIC_HOOKS=y`.
