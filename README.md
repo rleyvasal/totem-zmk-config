@@ -194,19 +194,20 @@ before the next host is advertised. Empty profiles remain available for pairing.
 Filter setup failures keep host advertising closed. Eviction remains a fallback,
 not the normal host-selection mechanism; simultaneous host connections are disabled.
 
-### Daily-driver trial — 2026-10-08
+### Daily driver — `main` (since 2026-10-16)
 
-Keep `persistent-diagnostic-log` unchanged for one to two weeks of normal use
-before considering a merge to `main`. USB typing and repeated Mac profile 0 /
-Windows profile 2 switches have passed the current field tests. Intermittent
-handoff delays remain a known limitation, not a resolved issue. Promote only if
-typing stays reliable, USB reconnect and sleep/wake work, inactive hosts stay
-asleep, and switching delays are acceptable. Capture a diagnostic dump promptly
-after a failure: retention is finite and unflushed RAM history can be lost on reset.
+`main` is what both halves run. The diagnostic-log trial that started on
+2026-10-08 ended when its branch merged into `main` on 2026-10-16, together with
+the Studio log module, charging and idle split-link work. Checked on hardware
+before the merge: Bluetooth typing (over 4 hours without lag once the journal
+saved at most every 5 minutes), USB typing, the right half's charging state,
+charge-complete detection, the settle delay after unplugging, and the idle split
+interval. Intermittent delays when switching hosts remain a known limitation.
+Capture a diagnostic dump promptly after a failure: retention is finite and
+unflushed RAM history can be lost on reset.
 
-The tested left-half UF2 has SHA-256
-`1cf2806ca1fad779c1a1833930d5737b3796e10e7bda1a14d55495590f6b37f5`.
-The firmware source revision is pinned in `config/west.yml`.
+New work goes on short-lived branches and merges into `main` after a hardware
+check. The firmware source revisions are pinned in `config/west.yml`.
 
 ### Tuning timers (after a week of real use)
 
