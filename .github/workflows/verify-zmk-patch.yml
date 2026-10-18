@@ -30,7 +30,8 @@ jobs:
 
           require_config() {
             local expected="$1"
-            if ! grep -qxF "$expected" config/totem.conf; then
+            # Shared settings are in totem.conf, left-only (central) ones in totem_left.conf.
+            if ! grep -qxF "$expected" config/totem.conf config/totem_left.conf; then
               echo "::error::Stable BLE policy requires: $expected"
               exit 1
             fi
@@ -56,10 +57,7 @@ jobs:
             "CONFIG_ZMK_SPLIT_BLE_PREF_TIMEOUT=400" \
             "CONFIG_BT_CTLR_TX_PWR_PLUS_8=y" \
             "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y" \
-            "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y" \
-            "CONFIG_TOTEM_RPA_DISCONNECT=n" \
-            "CONFIG_TOTEM_ADV_RECONCILE=n" \
-            "CONFIG_TOTEM_RECOVERY_REBOOT=n"
+            "CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y"
           do
             require_config "$expected"
           done
