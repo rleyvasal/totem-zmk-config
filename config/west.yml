@@ -22,8 +22,9 @@ manifest:
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
     - name: zmk-studio-log
       remote: fork
-      # battery-snapshots (531e4e7): the 'K' battery line and 'G' '1' requests.
-      revision: 531e4e7ce884cafa16bc73e80f53cf9d556290b7
+      # 'K' battery line and 'G' '1' requests (531e4e7); the left half's
+      # battery voltage at the end of the 'K' line, " mv=<millivolts>" (#1).
+      revision: 3f047d18b1e8d60fc0098782d1423c99c3ebbb0d
     # Overrides the zephyr project imported from zmk's app/west.yml: projects in
     # this top-level manifest take precedence over imported ones of the same name.
     # Branch v4.1.0+zmk-fixes+prepare-pipeline = zmkfirmware v4.1.0+zmk-fixes
