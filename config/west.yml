@@ -16,7 +16,9 @@ manifest:
       # the swapped BAS proxy, the idle split interval, USB-first while cabled,
       # the multi-host advertising options, and Studio raw frames for the
       # zmk-studio-log module.
-      revision: 3193ba7659e3f4f094ee5a6b9982669e9b8da133
+      # b23ebc54 (#30): zmk_battery_millivolts() also reports the voltage in
+      # STATE_OF_CHARGE mode (the XIAO), so the 'K' line can carry mv=.
+      revision: b23ebc54fa3e4183a23a5cff0671a399cdd728c7
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
