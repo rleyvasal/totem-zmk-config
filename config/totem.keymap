@@ -158,16 +158,17 @@
             layers = <BASE>;
         };
 
-#ifdef CONFIG_ZMK_STUDIO
-        // Two plain &kp keys. Esc+Tab used the MOD layer-tap thumb, so the
-        // combo often missed and Chrome just saw Esc/Tab. Q+B are both &kp.
+        // Studio unlock: Q (0) + B (4), two plain &kp keys. Esc+Tab used the MOD
+        // layer-tap thumb, so the combo often missed.
+        // Not wrapped in #ifdef CONFIG_ZMK_STUDIO: Studio is turned on by
+        // build.yaml/snippet Kconfig, which the keymap preprocessor can't see,
+        // so the guard always left the combo out.
         combo_studio_unlock {
             timeout-ms = <80>;
             key-positions = <0 4>;
             bindings = <&studio_unlock>;
             layers = <BASE>;
         };
-#endif
     };
 
     macros {
