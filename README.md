@@ -55,9 +55,11 @@ Battery life is about three days of daily use with these settings.
 | [zmk-studio-log](https://github.com/rleyvasal/zmk-studio-log) | Exact commit |
 | [Zephyr](https://github.com/rleyvasal/zephyr) | `v4.1.0+zmk-fixes` plus two split-link controller fixes |
 
-`.github/workflows/zmk-bump.yml` checks for a new ZMK Next release every Monday
-and opens a PR that moves the pin. The PR builds firmware to test; merge it
-after a hardware check.
+`.github/workflows/zmk-bump.yml` checks for new ZMK Next and zmk-studio-log
+releases every Monday and opens a PR that moves the pins. The PR builds
+firmware to test; merge it after a hardware check. The config pins exact
+commits rather than ZMK Next's `v0.2-branch` release line, so the firmware
+only changes when you merge one of these PRs.
 
 Using another keyboard? Follow ZMK Next's
 [quick start](https://github.com/rleyvasal/zmk-next/blob/main/docs/quick-start.md);

@@ -2,11 +2,13 @@ name: Bump ZMK
 
 # Weekly Totem firmware update. The stack is:
 #   zmkfirmware/zmk -> rleyvasal/zmk-next (synced and released weekly)
-#     -> this config (config/west.yml pins an exact zmk-next commit)
+#     -> this config (config/west.yml pins exact zmk-next and zmk-studio-log
+#        commits, so firmware only changes when a pin PR is merged)
 #
-# Each run checks the latest ZMK Next release. If it is newer than the pinned
-# commit, it runs ZMK Next's native tests at that release, then opens a PR here
-# that moves the west.yml pin. The PR's build produces the firmware to flash;
+# Each run checks the latest ZMK Next and zmk-studio-log releases. If either is
+# newer than its pinned commit, it runs ZMK Next's native tests at the new ZMK
+# Next release (when there is one), then opens one PR here that moves the
+# west.yml pins. The PR's build produces the firmware to flash;
 # merge it only after a hardware check. Nothing is ever merged automatically.
 # A pin that is already newer than the latest release (for example a main
 # commit pinned between releases) is left alone.
@@ -29,6 +31,7 @@ concurrency:
 
 env:
   NEXT_REPO: rleyvasal/zmk-next
+  LOG_REPO: rleyvasal/zmk-studio-log
 
 jobs:
   bump:
@@ -38,36 +41,45 @@ jobs:
         with:
           ref: main
 
-      - name: Compare the pin with the latest ZMK Next release
+      - name: Compare the pins with the latest releases
         id: next
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=$(gh api "repos/${NEXT_REPO}/releases/latest" --jq .tag_name)
-          current=$(awk '/name: zmk$/,/revision:/ { if ($1 == "revision:") { print $2; exit } }' config/west.yml)
           repo_path=$(awk '/name: zmk$/,/revision:/ { if ($1 == "repo-path:") { print $2; exit } }' config/west.yml)
           if [ "$repo_path" != "zmk-next" ]; then
             echo "::error::config/west.yml's zmk project is not rleyvasal/zmk-next (repo-path: ${repo_path})"
             exit 1
           fi
 
-          git clone --filter=blob:none --no-checkout "https://github.com/${NEXT_REPO}.git" zmk
-          git -C zmk fetch --filter=blob:none origin "refs/tags/${tag}:refs/tags/${tag}" "$current"
-          sha=$(git -C zmk rev-parse "${tag}^{commit}")
-
-          if git -C zmk merge-base --is-ancestor "$sha" "$current"; then
-            echo "Pinned ${current:0:7} already includes ZMK Next ${tag}; nothing to do."
-            echo "bump=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "bump=true" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          git -C zmk checkout -q "$sha"
+          # check <project> <repo> <dir>: sets <dir>_bump, _tag and _sha, and
+          # leaves <dir> checked out at the release when it is newer.
+          check() {
+            local project=$1 repo=$2 dir=$3 tag current sha
+            tag=$(gh api "repos/${repo}/releases/latest" --jq .tag_name)
+            current=$(awk "/name: ${project}\$/,/revision:/ { if (\$1 == \"revision:\") { print \$2; exit } }" config/west.yml)
+            if ! [[ "$current" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::${project} is pinned to '${current}', not an exact commit"
+              exit 1
+            fi
+            git clone -q --filter=blob:none --no-checkout "https://github.com/${repo}.git" "$dir"
+            git -C "$dir" fetch -q --filter=blob:none origin "refs/tags/${tag}:refs/tags/${tag}" "$current"
+            sha=$(git -C "$dir" rev-parse "${tag}^{commit}")
+            if git -C "$dir" merge-base --is-ancestor "$sha" "$current"; then
+              echo "${project}: pinned ${current:0:7} already includes ${tag}."
+              echo "${dir}_bump=false" >> "$GITHUB_OUTPUT"
+              return
+            fi
+            echo "${project}: ${current:0:7} -> ${tag} (${sha:0:7})"
+            git -C "$dir" checkout -q "$sha"
+            { echo "${dir}_bump=true"; echo "${dir}_tag=$tag"; echo "${dir}_sha=$sha"; } >> "$GITHUB_OUTPUT"
+          }
+          check zmk "$NEXT_REPO" zmk
+          check zmk-studio-log "$LOG_REPO" log
 
       - name: Test ZMK Next at the release
-        if: steps.next.outputs.bump == 'true'
+        if: steps.next.outputs.zmk_bump == 'true'
         run: |
           set -euo pipefail
           for test in $(cd zmk && git ls-files 'app/tests/**/test_*.py'); do
@@ -76,52 +88,73 @@ jobs:
           done
 
       - name: Open the config PR
-        if: steps.next.outputs.bump == 'true'
+        if: steps.next.outputs.zmk_bump == 'true' || steps.next.outputs.log_bump == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ steps.next.outputs.sha }}
-          TAG: ${{ steps.next.outputs.tag }}
+          ZMK_SHA: ${{ steps.next.outputs.zmk_sha }}
+          ZMK_TAG: ${{ steps.next.outputs.zmk_tag }}
+          LOG_SHA: ${{ steps.next.outputs.log_sha }}
+          LOG_TAG: ${{ steps.next.outputs.log_tag }}
         run: |
           set -euo pipefail
-          br="zmk-bump-${TAG}-${SHA:0:7}"
+          parts=() lines=() br="zmk-bump"
+          if [ -n "$ZMK_SHA" ]; then
+            parts+=("ZMK Next ${ZMK_TAG}")
+            br+="-${ZMK_TAG}-${ZMK_SHA:0:7}"
+            lines+=("- ZMK Next [${ZMK_TAG}](https://github.com/${NEXT_REPO}/releases/tag/${ZMK_TAG}) ([${ZMK_SHA:0:7}](https://github.com/${NEXT_REPO}/commit/${ZMK_SHA})). ZMK Next's native tests passed at that commit.")
+          fi
+          if [ -n "$LOG_SHA" ]; then
+            parts+=("zmk-studio-log ${LOG_TAG}")
+            br+="-log-${LOG_TAG}-${LOG_SHA:0:7}"
+            lines+=("- zmk-studio-log [${LOG_TAG}](https://github.com/${LOG_REPO}/releases/tag/${LOG_TAG}) ([${LOG_SHA:0:7}](https://github.com/${LOG_REPO}/commit/${LOG_SHA})).")
+          fi
           if [ -n "$(gh pr list --head "$br" --state open --json url --jq '.[0].url // empty')" ]; then
             echo "A PR for $br is already open."
             exit 0
           fi
 
-          python3 - "$SHA" <<'PY'
+          python3 - "$ZMK_SHA" "$LOG_SHA" <<'PY'
           import re, sys
           path = "config/west.yml"
           text = open(path).read()
-          block = re.search(r"^    - name: zmk\n(?:      .*\n|\s*#.*\n)*", text, re.M)
-          new = re.sub(r"^      revision: .*$", f"      revision: {sys.argv[1]}", block.group(0), flags=re.M)
-          open(path, "w").write(text.replace(block.group(0), new))
+          for project, sha in (("zmk", sys.argv[1]), ("zmk-studio-log", sys.argv[2])):
+              if not sha:
+                  continue
+              block = re.search(rf"^    - name: {re.escape(project)}\n(?:      .*\n|\s*#.*\n)*", text, re.M)
+              new = re.sub(r"^      revision: .*$", f"      revision: {sha}", block.group(0), flags=re.M)
+              text = text.replace(block.group(0), new)
+          open(path, "w").write(text)
           PY
 
+          summary=$(IFS=,; echo "${parts[*]}" | sed 's/,/ and /')
           git config user.name zmk-bump-bot
           git config user.email actions@users.noreply.github.com
           git checkout -b "$br"
-          git commit -am "Bump ZMK Next to ${TAG} (${SHA:0:7})"
+          git commit -am "Bump ${summary}"
           git push origin "$br"
 
-          cat > /tmp/body.md <<EOF
-          Moves \`config/west.yml\` to [${NEXT_REPO}@${SHA:0:7}](https://github.com/${NEXT_REPO}/commit/${SHA}), ZMK Next [${TAG}](https://github.com/${NEXT_REPO}/releases/tag/${TAG}). ZMK Next's native tests passed at that commit.
+          {
+            echo "Moves \`config/west.yml\` to:"
+            echo
+            printf '%s\n' "${lines[@]}"
+            cat <<'EOF'
 
           The firmware build for this branch is started automatically; download its artifacts from the Actions tab.
 
           **Merge only after flashing both halves and checking:**
 
           - [ ] Typing on both halves, including homerow mods and combos
-          - [ ] Profile switching with \`&bt BT_SEL\`
+          - [ ] Profile switching with `&bt BT_SEL`
           - [ ] Only the active host stays connected
           - [ ] The selected host reconnects cleanly; USB typing stays stable
           - [ ] Retained logs can be read and live logs don't stall typing
           - [ ] Both halves' battery levels, charging and the 'K' line
           - [ ] Idle battery drain stays around 0.5 to 0.9 %/hr
 
-          If anything regresses, close this PR. The keyboard stays on the current pin.
+          If anything regresses, close this PR. The keyboard stays on the current pins.
           EOF
-          title="Bump ZMK Next to ${TAG}"
+          } > /tmp/body.md
+          title="Bump ${summary}"
           if ! gh pr create --base main --head "$br" --title "$title" --body-file /tmp/body.md; then
             # Opening PRs needs "Allow GitHub Actions to create and approve pull
             # requests" in the repo's Actions settings. Without it, file an issue

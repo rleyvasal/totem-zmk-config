@@ -18,7 +18,9 @@ manifest:
       # zmk-studio-log module.
       # b23ebc54 (#30): zmk_battery_millivolts() also reports the voltage in
       # STATE_OF_CHARGE mode (the XIAO), so the 'K' line can carry mv=.
-      revision: b23ebc54fa3e4183a23a5cff0671a399cdd728c7
+      # Exact commit, not v0.2-branch: firmware changes only through a
+      # zmk-bump PR checked on hardware. 06df94ae = v0.2.4.
+      revision: 06df94ae4694d6e92e16a517f0f5467d1364bad1
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
@@ -26,7 +28,8 @@ manifest:
       remote: fork
       # 'K' battery line and 'G' '1' requests (531e4e7); the left half's
       # battery voltage at the end of the 'K' line, " mv=<millivolts>" (#1).
-      revision: 3f047d18b1e8d60fc0098782d1423c99c3ebbb0d
+      # 312f623 = v0.1.1; zmk-bump moves it too.
+      revision: 312f623d65832dddc99beeaae0d74e703f6f2db3
     # Overrides the zephyr project imported from zmk's app/west.yml: projects in
     # this top-level manifest take precedence over imported ones of the same name.
     # Branch v4.1.0+zmk-fixes+prepare-pipeline = zmkfirmware v4.1.0+zmk-fixes
