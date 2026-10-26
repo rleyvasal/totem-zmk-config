@@ -1,5 +1,5 @@
 # Totem/XIAO: Studio RPC on the board CDC; extra console UART off.
-# Other boards (nice!nano, Corne, …): use snippet zmk-studio-one-cdc instead.
+# Other boards (nice!nano, Corne, …): use ZMK Next's zmk-next snippet instead.
 name: totem-studio-rpc
 append:
   EXTRA_DTC_OVERLAY_FILE: totem-studio-rpc.overlay
