@@ -20,7 +20,7 @@ manifest:
       # STATE_OF_CHARGE mode (the XIAO), so the 'K' line can carry mv=.
       # Exact commit, not v0.2-branch: firmware changes only through a
       # zmk-bump PR checked on hardware. 06df94ae = v0.2.4.
-      revision: 06df94ae4694d6e92e16a517f0f5467d1364bad1
+      revision: 29ccf29d7208a77f7489391d577d313320ad4394
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
