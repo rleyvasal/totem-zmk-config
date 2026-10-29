@@ -35,7 +35,8 @@ set in `config/totem.conf`, plus the small Totem module in this repo.
   computer is away. While USB is plugged in, the keyboard doesn't advertise and
   types over USB.
 - **Battery levels for both halves**, including charging state, sent to the
-  computer over Bluetooth and to the configurator over USB.
+  computer over Bluetooth and to the configurator over USB. On a Mac,
+  [ZMK Battery](#battery-in-the-macos-menu-bar) shows them in the menu bar.
 - **Stable split link.** 15 ms connection interval with a 4 s timeout while
   typing, 60 ms when idle, and +8 dBm transmit power.
 - **Live keymap editing.** ZMK Studio and Runtime Config on the left half, for
@@ -46,6 +47,43 @@ set in `config/totem.conf`, plus the small Totem module in this repo.
   [docs/diagnostics.md](docs/diagnostics.md).
 
 Battery life is about three days of daily use with these settings.
+
+## Editing the keymap live
+
+Plug the left half into USB and open the
+[ZMK Next Configurator](https://github.com/rleyvasal/zmk-next-configurator) in
+a Chromium-based browser. It runs from a local server on your computer, and
+nothing is uploaded. Click a key to change what it does, including hold-taps,
+combos, macros and layers, and **Live Apply** writes the change to the keyboard
+without a new firmware build. The configurator can also load a `.keymap` from
+GitHub or a file, and download the edited one.
+
+![ZMK Next Configurator showing the Totem's BASE layer with homerow mods, combos and layer keys](docs/images/configurator-keymap.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/configurator-key-editor.png" alt="Editing a homerow hold-tap: hold Shift, tap S"></td>
+<td width="50%"><img src="docs/images/configurator-nav-layer.png" alt="The NAV layer: arrows, scroll, mouse buttons and navigation keys"></td>
+</tr>
+<tr>
+<td>Select a key to edit its behavior, hold and tap.</td>
+<td>One tab per layer; the NAV layer has arrows, scrolling and mouse buttons.</td>
+</tr>
+</table>
+
+Screenshots show the Totem profile with a sample Totem keymap loaded. With the
+keyboard connected, the configurator also shows its log and battery levels.
+
+## Battery in the macOS menu bar
+
+[ZMK Battery](https://github.com/rleyvasal/zmk-next-battery) is a small Swift
+menu bar app that shows both halves' battery, for example `L 78% R 15%!`, and
+notifies you when either half drops to 20% and 10%. It reads the levels over
+Bluetooth, or over USB from the left half's Studio port, so it works with this
+firmware's USB-first behavior. Install it from the
+[Releases page](https://github.com/rleyvasal/zmk-next-battery/releases); it
+needs macOS 13 or later. The USB readings need the `zmk-studio-log` module this
+config already includes.
 
 ## Built on
 
