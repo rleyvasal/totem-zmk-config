@@ -139,68 +139,9 @@ nothing, and only power-cycling both halves recovered it.
   `zmk_ble_totem_adv_boost_rearm` (densify via stop+restart),
   `zmk_ble_totem_kick_open_adv`.
 
-The current build pins the full custom `rleyvasal/zmk-next` source revision in
-`config/west.yml`; upstream updates merge into that revision to preserve custom
-features. `zmk-ble.patch` is a historical patch reference, not a complete copy of
-the current firmware. The thin-fork instructions below describe the older workflow.
-
-ZMK's build has no patch hook, so the patch is hosted on a thin fork that
-`config/west.yml` points at (`rleyvasal/zmk`). The patch file here is the source of
-truth; the fork is just where the applied result lives. Each ZMK base gets its own
-branch **`zmk-optimized-<zmk-sha>`** (= that upstream commit + this patch).
-**`config/west.yml` pins the full commit SHA** of that tip (reproducible builds;
-force-pushes cannot move a validated pin). The human branch name is still
-`zmk-optimized-484a054` (and friends).
-
-## Updating to a newer ZMK — automated (preferred)
-
-`.github/workflows/zmk-bump.yml` implements **policy A**:
-
-| Trigger | Target |
-|---|---|
-| **Schedule** (Monday 06:00 UTC) | Latest *stable* `zmkfirmware/zmk` GitHub release only |
-| **`workflow_dispatch` → release** | Same as schedule (default) |
-| **`workflow_dispatch` → main** | `zmkfirmware/zmk` main HEAD (manual / bleeding-edge) |
-| **`workflow_dispatch` → ref** | Explicit tag, branch, or SHA |
-
-It applies this patch and:
-
-- **already current / already past a release** → no-op (will **not** downgrade a
-  post-release main pin such as `zmk-optimized-484a054` when the latest release
-  is still `v0.3.0`)
-- **applies cleanly** (+ post-apply symbol checks for go-dark/throttle/boost) →
-  pushes `zmk-optimized-<new-sha>` to the fork and opens a **config PR** that
-  pins `config/west.yml` to the **new fork tip SHA**. CI builds flashable
-  artifacts — flash, run the PR checklist, then **merge to accept**. Nothing
-  lands on `main` until you merge.
-- **`verify-zmk-patch.yml`** on every push/PR greps the pinned revision for the
-  same symbols so an unpatched tip cannot silently build.
-- **conflicts or sanity-check failure** → opens an **issue** (deduped); rebase by
-  hand (below).
-- **open PR/issue already exists** for that short SHA → no-op
-
-Requires the `ZMK_FORK_TOKEN` secret (fine-grained PAT, Contents:write on the fork).
-
-## Updating / fixing by hand
-
-Only needed for the first-time branch, or when the workflow reports a conflict:
-
-```sh
-git clone https://github.com/rleyvasal/zmk.git ~/zmk        # or reuse existing
-cd ~/zmk
-git remote add upstream https://github.com/zmkfirmware/zmk.git   # skip if present
-git fetch upstream
-git checkout -B zmk-optimized-<new-short-sha> <new-upstream-sha>
-git apply ~/totem-zmk-config/patches/zmk-ble.patch            # fix hunks if it fails
-git commit -am "ZMK optimized (throttle + idle-disconnect + boost) on <new-short-sha>"
-git push -f origin zmk-optimized-<new-short-sha>
-TIP=$(git rev-parse HEAD)
-```
-
-If you fixed hunks by hand, regenerate the patch:
-`git -C ~/zmk diff <new-upstream-sha> -- app/src/ble.c > patches/zmk-ble.patch`.
-Then set `config/west.yml` `revision:` to **`$TIP` (full SHA)**, not only the
-branch name, and push the config repo.
+`zmk-ble.patch` is a historical reference, not a copy of the current firmware: the
+build pins `rleyvasal/zmk-next` by exact commit in `config/west.yml`, and
+`.github/workflows/zmk-bump.yml` moves that pin through a PR.
 
 # Zephyr patch — controller prepare pipeline (`zephyr-prepare-pipeline.patch`)
 
