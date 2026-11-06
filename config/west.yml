@@ -20,9 +20,9 @@ manifest:
       # STATE_OF_CHARGE mode (the XIAO), so the 'K' line can carry mv=.
       # Exact commit, not v0.2-branch: firmware changes only through a
       # zmk-bump PR checked on hardware. 06df94ae = v0.2.4.
-      # 1d73adc1 (#41): CONFIG_ZMK_BATTERY_LIPO_DISCHARGE_CURVE, on v0.2.5.
+      # c118787c (#41): CONFIG_ZMK_BATTERY_LIPO_DISCHARGE_CURVE, on v0.2.5.
       # Move to the merge commit once #41 is merged.
-      revision: 1d73adc1fcb2e33ad5c9aaea9dea3eeaf05479b3
+      revision: c118787cadf6322416f1baf2cbe0296d1354a8c7
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
