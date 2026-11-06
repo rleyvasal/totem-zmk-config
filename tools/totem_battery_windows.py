@@ -2,6 +2,7 @@
 # /// script
 # requires-python = ">=3.9"
 # dependencies = [
+#     "pyserial",
 #     "winrt-runtime; sys_platform == 'win32'",
 #     "winrt-Windows.Devices.Bluetooth; sys_platform == 'win32'",
 #     "winrt-Windows.Devices.Bluetooth.GenericAttributeProfile; sys_platform == 'win32'",
@@ -17,6 +18,11 @@ Reads the keyboard's Battery Service through Windows' own Bluetooth stack, so it
 works while the keyboard is paired and connected, with no USB cable. Windows'
 Settings shows only one of the two levels; this shows both.
 
+While the left half is plugged in over USB it stops using Bluetooth to the
+computer, so then the script asks it over USB instead, the same snapshot ('G' '1'
+request, 'K' reply) the ZMK Battery Mac app and the configurator read. The USB
+part works on any OS; Bluetooth needs Windows.
+
 Easiest, with uv (https://docs.astral.sh/uv/), no clone and no pip: uv
 downloads the script, installs what it needs and runs it.
 
@@ -26,7 +32,7 @@ downloads the script, installs what it needs and runs it.
 
 From a clone: uv run tools\\totem_battery_windows.py. Without uv, Python 3.9+ and:
 
-    py -m pip install winrt-runtime winrt-Windows.Devices.Bluetooth ^
+    py -m pip install pyserial winrt-runtime winrt-Windows.Devices.Bluetooth ^
         winrt-Windows.Devices.Bluetooth.GenericAttributeProfile ^
         winrt-Windows.Devices.Enumeration winrt-Windows.Storage.Streams ^
         winrt-Windows.Foundation winrt-Windows.Foundation.Collections
@@ -47,8 +53,10 @@ started lagging and dropping the split link.
 import argparse
 import asyncio
 import os
+import re
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime
 
@@ -140,7 +148,104 @@ def format_levels(levels):
     return "  ".join(parts)
 
 
+# Each half in a 'K' snapshot: a level, "N usb" (on USB power), "N usb full",
+# "usb" (on USB, no level measured on battery yet) or "--" (no level).
+SNAPSHOT_HALF = re.compile(r"\b(left|right)=(\d+|usb|--)( usb)?( full)?")
+
+
+def parse_snapshot(line):
+    """'left=53 usb right=32 mv=3964' -> {'left': (53, True), 'right': (32, None)}.
+
+    On USB a half reports the last level it measured on battery, and it is
+    charging. A half with no level is left out."""
+    levels = {}
+    for half, level, usb, _full in SNAPSHOT_HALF.findall(line):
+        if level.isdigit():
+            levels[half] = (int(level), True if usb else None)
+    return levels
+
+
+# --- USB (the left half's Studio serial port) ---------------------------------
+
+SOF, ESC, EOF = 0xAB, 0xAC, 0xAD
+# ZMK's USB IDs (CONFIG_USB_DEVICE_VID / _PID), which the Totem keeps.
+ZMK_VID, ZMK_PID = 0x1D50, 0x615E
+
+
+def frame(payload):
+    out = bytearray([SOF])
+    for byte in payload:
+        if byte in (SOF, ESC, EOF):
+            out.append(ESC)
+        out.append(byte)
+    out.append(EOF)
+    return bytes(out)
+
+
+def frames(data, state):
+    """Yield complete frame payloads from data; state carries a partial frame."""
+    for byte in data:
+        if not state["active"]:
+            if byte == SOF:
+                state.update(active=True, escaped=False, payload=bytearray())
+            continue
+        if state["escaped"]:
+            state["payload"].append(byte)
+            state["escaped"] = False
+        elif byte == ESC:
+            state["escaped"] = True
+        elif byte == SOF:
+            state["payload"] = bytearray()
+        elif byte == EOF:
+            state["active"] = False
+            yield bytes(state["payload"])
+        else:
+            state["payload"].append(byte)
+
+
+def usb_ports():
+    """The keyboard's serial ports, by USB ID (COM5 on Windows, /dev/cu.usbmodem... on a Mac)."""
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return []
+    ports = []
+    for info in sorted(list_ports.comports(), key=lambda p: p.device):
+        if info.vid == ZMK_VID and info.pid == ZMK_PID and not info.device.startswith("/dev/tty."):
+            ports.append(info.device)
+    return ports
+
+
+def read_usb(path, timeout=5.0, attempts=3, retry_after=2.0):
+    """Ask for one battery snapshot over USB. (levels, None) or (None, why not)."""
+    import serial
+    why = "no reply"
+    for attempt in range(attempts):
+        try:
+            with serial.Serial(path, 115200, timeout=0.2, write_timeout=2) as port:
+                state = {"active": False, "escaped": False, "payload": bytearray()}
+                port.reset_input_buffer()
+                port.write(frame(b"G1"))
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    for payload in frames(port.read(512), state):
+                        if payload[:1] == b"K":
+                            line = payload[1:].decode(errors="replace").strip()
+                            return parse_snapshot(line), None
+            why = "no battery reply"
+        except (serial.SerialException, OSError) as err:
+            # Another program (the configurator, a terminal) may have the port open.
+            why = f"port busy or closed ({err})"
+        if attempt + 1 < attempts:
+            time.sleep(retry_after)
+    return None, why
+
+
 # --- Windows Bluetooth (WinRT) -------------------------------------------------
+
+class BluetoothUnavailable(Exception):
+    pass
+
 
 def _winrt():
     try:
@@ -149,8 +254,11 @@ def _winrt():
         from winrt.windows.devices.bluetooth.genericattributeprofile import GattCommunicationStatus
         from winrt.windows.devices.enumeration import DeviceInformation
     except ImportError as err:
-        sys.exit(f"WinRT bindings not found ({err}). This script runs on Windows; "
-                 "install the packages listed at the top of this file.")
+        if sys.platform != "win32":
+            raise BluetoothUnavailable("Bluetooth reading needs Windows; plug the left half "
+                                       "in over USB, or on a Mac use the ZMK Battery app")
+        raise BluetoothUnavailable(f"WinRT bindings not found ({err}); install the packages "
+                                   "listed at the top of this file")
     return BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice, \
         GattCommunicationStatus, DeviceInformation
 
@@ -287,6 +395,23 @@ def notify(text):
 # --- Main ---------------------------------------------------------------------
 
 async def once(name):
+    """USB first: while the left half is plugged in it stops using Bluetooth to the computer."""
+    usb_why = None
+    for path in usb_ports():
+        levels, why = await asyncio.to_thread(read_usb, path)
+        if levels:
+            return levels, f"USB {path}"
+        usb_why = f"USB {path}: {why}"
+    try:
+        levels, status = await once_bluetooth(name)
+    except BluetoothUnavailable as err:
+        return None, usb_why or str(err)
+    if levels is None and usb_why:
+        status = f"{status}; {usb_why}"
+    return levels, status
+
+
+async def once_bluetooth(name):
     found = await find_keyboard(name)
     if found is None:
         return None, f"no paired Bluetooth device named like '{name}' (try --list)"
@@ -301,9 +426,16 @@ async def once(name):
 
 async def main_async(args):
     if args.list:
-        for name, connected, device in await paired_devices():
+        ports = usb_ports()
+        print("USB: " + (", ".join(ports) if ports else "keyboard not plugged in"))
+        try:
+            devices = await paired_devices()
+        except BluetoothUnavailable as err:
+            print(f"Bluetooth: {err}")
+            return 0
+        for name, connected, device in devices:
             state = "connected" if connected else "not connected"
-            print(f"{name!r:30} {state:14} {device.bluetooth_address:012X}")
+            print(f"Bluetooth: {name!r:30} {state:14} {device.bluetooth_address:012X}")
         return 0
 
     alerts = LowBatteryAlerts()
@@ -333,7 +465,7 @@ def main():
     parser.add_argument("--watch", type=float, metavar="SECONDS",
                         help="keep checking every SECONDS and show a Windows notification "
                              f"at {LOW_AT}%% and {CRITICAL_AT}%%")
-    parser.add_argument("--list", action="store_true", help="list paired Bluetooth LE devices")
+    parser.add_argument("--list", action="store_true", help="show the keyboard's USB port and the paired Bluetooth LE devices")
     args = parser.parse_args()
     try:
         sys.exit(asyncio.run(main_async(args)))

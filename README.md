@@ -91,7 +91,8 @@ config already includes.
 Windows Settings shows only one of the two levels.
 [`tools/totem_battery_windows.py`](tools/totem_battery_windows.py) reads both
 over Bluetooth, while the keyboard is paired and connected, for example
-`L 63%  R 9% charging`. With [uv](https://docs.astral.sh/uv/) it runs straight
+`L 63%  R 9% charging`. While the left half is plugged in over USB, it stops
+using Bluetooth to the computer, so the script reads the levels over USB instead. With [uv](https://docs.astral.sh/uv/) it runs straight
 from GitHub, with no clone, no pip and no admin rights; uv installs its
 Bluetooth packages the first time. In PowerShell:
 
