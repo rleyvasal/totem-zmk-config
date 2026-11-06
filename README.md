@@ -36,7 +36,8 @@ set in `config/totem.conf`, plus the small Totem module in this repo.
   types over USB.
 - **Battery levels for both halves**, including charging state, sent to the
   computer over Bluetooth and to the configurator over USB. On a Mac,
-  [ZMK Battery](#battery-in-the-macos-menu-bar) shows them in the menu bar.
+  [ZMK Battery](#battery-in-the-macos-menu-bar) shows them in the menu bar; on
+  Windows, a [Python script](#battery-on-windows) does.
 - **Stable split link.** 15 ms connection interval with a 4 s timeout while
   typing, 60 ms when idle, and +8 dBm transmit power.
 - **Live keymap editing.** ZMK Studio and Runtime Config on the left half, for
@@ -84,6 +85,25 @@ firmware's USB-first behavior. Install it from the
 [Releases page](https://github.com/rleyvasal/zmk-next-battery/releases); it
 needs macOS 13 or later. The USB readings need the `zmk-studio-log` module this
 config already includes.
+
+## Battery on Windows
+
+Windows Settings shows only one of the two levels.
+[`tools/totem_battery_windows.py`](tools/totem_battery_windows.py) reads both
+over Bluetooth, while the keyboard is paired and connected, for example
+`L 63%  R 9% charging`. With [uv](https://docs.astral.sh/uv/) it runs straight
+from GitHub, with no clone, no pip and no admin rights; uv installs its
+Bluetooth packages the first time. In PowerShell:
+
+```powershell
+uv run https://raw.githubusercontent.com/rleyvasal/totem-zmk-config/main/tools/totem_battery_windows.py
+```
+
+Add `--watch 300` to check every five minutes and get a Windows notification
+when either half drops to 20% and 10%, or `--list` to see the paired Bluetooth
+devices if it can't find the keyboard. To keep a copy, download it with
+`curl.exe -fsSLo totem_battery_windows.py <same URL>` and run
+`uv run totem_battery_windows.py`.
 
 ## Built on
 
