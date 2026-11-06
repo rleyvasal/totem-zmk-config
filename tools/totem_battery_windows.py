@@ -1,20 +1,36 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "winrt-runtime; sys_platform == 'win32'",
+#     "winrt-Windows.Devices.Bluetooth; sys_platform == 'win32'",
+#     "winrt-Windows.Devices.Bluetooth.GenericAttributeProfile; sys_platform == 'win32'",
+#     "winrt-Windows.Devices.Enumeration; sys_platform == 'win32'",
+#     "winrt-Windows.Storage.Streams; sys_platform == 'win32'",
+#     "winrt-Windows.Foundation; sys_platform == 'win32'",
+#     "winrt-Windows.Foundation.Collections; sys_platform == 'win32'",
+# ]
+# ///
 """Show the Totem's left and right battery levels on Windows, over Bluetooth.
 
 Reads the keyboard's Battery Service through Windows' own Bluetooth stack, so it
 works while the keyboard is paired and connected, with no USB cable. Windows'
 Settings shows only one of the two levels; this shows both.
 
-    py tools\\totem_battery_windows.py              # print both levels once
-    py tools\\totem_battery_windows.py --watch 300  # check every 5 minutes, warn at 20% and 10%
-    py tools\\totem_battery_windows.py --list       # list paired Bluetooth LE devices
+Easiest, with uv (https://docs.astral.sh/uv/), no clone and no pip: uv
+downloads the script, installs what it needs and runs it.
 
-Needs Python 3.9+ on Windows 10 or 11 and the WinRT bindings:
+    uv run https://raw.githubusercontent.com/rleyvasal/totem-zmk-config/main/tools/totem_battery_windows.py
+    uv run <same URL> --watch 300   # check every 5 minutes, warn at 20% and 10%
+    uv run <same URL> --list        # list paired Bluetooth LE devices
+
+From a clone: uv run tools\\totem_battery_windows.py. Without uv, Python 3.9+ and:
 
     py -m pip install winrt-runtime winrt-Windows.Devices.Bluetooth ^
         winrt-Windows.Devices.Bluetooth.GenericAttributeProfile ^
         winrt-Windows.Devices.Enumeration winrt-Windows.Storage.Streams ^
         winrt-Windows.Foundation winrt-Windows.Foundation.Collections
+    py tools\\totem_battery_windows.py
 
 How the halves are told apart (same rules as the ZMK Battery Mac app): the
 keyboard has two Battery Level characteristics (0x2A19). On this firmware
