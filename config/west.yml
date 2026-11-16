@@ -21,7 +21,7 @@ manifest:
       # Exact commit, not v0.2-branch: firmware changes only through a
       # zmk-bump PR checked on hardware. 06df94ae = v0.2.4.
       # 48bfab64 (#41): CONFIG_ZMK_BATTERY_LIPO_DISCHARGE_CURVE, on v0.2.5.
-      revision: 48bfab6423bf764b809e8718fe7294f7443c76fc
+      revision: 439e4d3bab9a475697d33de75e5518f33bde980d
       import: app/west.yml
     # Studio log stream, reset reason, crash capture and log history across
     # restarts for the left Studio image (see snippets/totem-studio-rpc).
